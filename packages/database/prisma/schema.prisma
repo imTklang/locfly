@@ -1,0 +1,57 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  priceAlerts   PriceAlert[]
+}
+
+model SearchCache {
+  id            String    @id @default(uuid())
+  location      String
+  startDate     DateTime
+  endDate       DateTime
+  results       Json      // Armazena a lista de ofertas encontradas
+  updatedAt     DateTime  @updatedAt
+
+  @@index([location, startDate, endDate])
+}
+
+model PriceAlert {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  location      String
+  targetPrice   Decimal
+  carCategory   String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+}
+
+model CarOffer {
+  id            String    @id @default(uuid())
+  provider      String    // ex: Movida, Localiza
+  model         String
+  category      String
+  price         Decimal
+  transmission  String?
+  hasAC         Boolean?
+  seats         Int?
+  deepLink      String
+  imageUrl      String?
+  createdAt     DateTime  @default(now())
+}
