@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+.DS_Store
+*.log
+.vscode/
+.idea/
+/apps/api/node_modules/
+/apps/web/node_modules/
+/packages/database/node_modules/
+/packages/scrapers/node_modules/
+
