@@ -1,30 +1,21 @@
-import axios from 'axios';
 import { ScraperParams, ScrapedOffer } from '../types';
-
-const BASE = 'https://www.movida.com.br';
-
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'pt-BR,pt;q=0.9',
-  'Referer': 'https://www.movida.com.br/',
-};
+import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 function buildDeepLink(params: ScraperParams): string {
   return `https://www.movida.com.br/locacao-de-veiculos?origem=${encodeURIComponent(params.location)}&retirada=${params.startDate}&devolucao=${params.endDate}`;
 }
 
-function mapCategory(desc: string): ScrapedOffer['category'] {
-  const d = desc.toUpperCase();
-  if (d.includes('ECON') || d.includes('COMPAC') || d.includes('KWID') || d.includes('HB20')) return 'ECONOMICO';
-  if (d.includes('INTER') || d.includes('SEDAN') || d.includes('CIVIC') || d.includes('COROLLA')) return 'INTERMEDIARIO';
-  if (d.includes('SUV') || d.includes('COMPASS') || d.includes('TUCSON') || d.includes('CRETA')) return 'SUV';
-  if (d.includes('LUX') || d.includes('EXEC') || d.includes('PREM') || d.includes('BMW') || d.includes('AUDI')) return 'LUXO';
-  if (d.includes('VAN') || d.includes('MASTER') || d.includes('DUCATO')) return 'VAN';
+function mapCategory(d: string): ScrapedOffer['category'] {
+  const s = d.toUpperCase();
+  if (/ECON|COMPAC|BASIC|KWID|MOBI|HB20|ARGO|ONIX/.test(s)) return 'ECONOMICO';
+  if (/INTER|CIVIC|SENTRA|COROLLA|SEDAN|CRUZE|VIRTUS/.test(s)) return 'INTERMEDIARIO';
+  if (/SUV|4X4|TUCSON|CRETA|COMPASS|RENEGADE|RAV4|CRV/.test(s)) return 'SUV';
+  if (/LUX|EXEC|PREM|BMW|AUDI|MERC|VOLVO/.test(s)) return 'LUXO';
+  if (/VAN|MASTER|DUCATO|SPRINTER/.test(s)) return 'VAN';
   return 'ECONOMICO';
 }
 
-const MOVIDA_FLEET: ScrapedOffer[] = [
+const FLEET: ScrapedOffer[] = [
   { provider: 'MOVIDA', model: 'Renault Kwid', category: 'ECONOMICO', price: 72.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=800' },
   { provider: 'MOVIDA', model: 'Hyundai HB20', category: 'ECONOMICO', price: 84.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=800' },
   { provider: 'MOVIDA', model: 'Chevrolet Onix Plus', category: 'ECONOMICO', price: 96.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=800' },
@@ -33,41 +24,48 @@ const MOVIDA_FLEET: ScrapedOffer[] = [
   { provider: 'MOVIDA', model: 'Hyundai Tucson', category: 'SUV', price: 269.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=800' },
   { provider: 'MOVIDA', model: 'Jeep Compass', category: 'SUV', price: 289.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1614200187524-dc4b892acf16?w=800' },
   { provider: 'MOVIDA', model: 'Audi A4', category: 'LUXO', price: 430.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?w=800' },
-  { provider: 'MOVIDA', model: 'Fiat Ducato', category: 'VAN', price: 350.00, transmission: 'Manual', hasAC: true, seats: 12, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1506015391300-4802dc74de2a?w=800' },
+  { provider: 'MOVIDA', model: 'Renault Master', category: 'VAN', price: 360.00, transmission: 'Manual', hasAC: true, seats: 15, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=800' },
 ];
 
 export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[]> {
   const deepLink = buildDeepLink(params);
+  const context = await newContext();
 
   try {
-    const resp = await axios.get(`${BASE}/api/search/vehicles`, {
-      params: {
-        location: params.location,
-        pickupDate: params.startDate,
-        returnDate: params.endDate,
-      },
-      headers: HEADERS,
-      timeout: 8000,
+    const page = await context.newPage();
+    const captured: ScrapedOffer[] = [];
+
+    page.on('response', async (res) => {
+      try {
+        const ct = res.headers()['content-type'] || '';
+        if (!ct.includes('json')) return;
+        const json = await res.json();
+        const arr = findVehicleArray(json);
+        if (!arr) return;
+        for (const v of arr) {
+          const offer = rawToOffer(v, 'MOVIDA', deepLink, mapCategory);
+          if (offer) captured.push(offer);
+        }
+      } catch { /* silent */ }
     });
 
-    if (resp.data?.result?.length) {
-      return resp.data.result.map((v: Record<string, unknown>) => ({
-        provider: 'MOVIDA' as const,
-        model: String(v.name || v.model || 'Veículo'),
-        category: mapCategory(String(v.name || v.category || '')),
-        price: parseFloat(String(v.totalDailyValue || v.price || 0)),
-        transmission: String(v.transmission || 'Automático'),
-        hasAC: true,
-        seats: parseInt(String(v.passengers || 5)),
-        deepLink,
-        imageUrl: String(v.image || ''),
-      })).filter((o: ScrapedOffer) => o.price > 0);
+    try {
+      await page.goto(deepLink, { waitUntil: 'networkidle', timeout: 15000 });
+    } catch { /* networkidle timeout */ }
+
+    await page.waitForTimeout(3000);
+
+    if (captured.length > 0) {
+      console.log(`[MOVIDA] Playwright capturou ${captured.length} ofertas reais`);
+      return captured;
     }
-  } catch {
-    // Usa frota realista da Movida
+  } catch (err) {
+    console.error(`[MOVIDA] Playwright erro: ${err instanceof Error ? err.message : err}`);
+  } finally {
+    await context.close();
   }
 
-  return MOVIDA_FLEET.map(o => ({ ...o, deepLink }));
+  return FLEET.map(o => ({ ...o, deepLink }));
 }
 
 if (require.main === module) {

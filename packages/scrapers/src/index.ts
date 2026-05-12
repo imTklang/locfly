@@ -4,6 +4,7 @@ import { scrapeMovida } from './scrapers/movida';
 import { scrapeUnidas } from './scrapers/unidas';
 import { scrapeHertz } from './scrapers/hertz';
 import { scrapeFoco } from './scrapers/foco';
+import { closeBrowser } from './browser';
 
 const SCRAPERS: Array<{ name: ScrapedOffer['provider']; fn: (p: ScraperParams) => Promise<ScrapedOffer[]> }> = [
   { name: 'LOCALIZA', fn: scrapeLocaliza },
@@ -44,7 +45,8 @@ export async function runAllScrapers(params: ScraperParams): Promise<ScrapedOffe
 // Teste standalone
 if (require.main === module) {
   runAllScrapers({ location: 'São Paulo', startDate: '2026-06-01', endDate: '2026-06-05' })
-    .then(offers => {
+    .then(async offers => {
+      await closeBrowser();
       console.log(`\n=== RESULTADO ===`);
       console.log(`Total: ${offers.length} ofertas`);
       const byProvider = offers.reduce((acc, o) => {
@@ -57,5 +59,5 @@ if (require.main === module) {
         console.log(`  ${o.provider} - ${o.model}: R$ ${o.price}/dia`)
       );
     })
-    .catch(console.error);
+    .catch(async (err) => { await closeBrowser(); console.error(err); });
 }

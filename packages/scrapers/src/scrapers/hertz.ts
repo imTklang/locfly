@@ -1,33 +1,22 @@
-import axios from 'axios';
 import { ScraperParams, ScrapedOffer } from '../types';
-
-// Hertz Brasil usa o sistema global da Hertz
-const BASE = 'https://www.hertz.com';
-
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'pt-BR,pt;q=0.9',
-  'Referer': 'https://www.hertz.com.br/',
-  'X-Requested-With': 'XMLHttpRequest',
-};
+import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 function buildDeepLink(params: ScraperParams): string {
   return `https://www.hertz.com.br/rentacar/reservation/#/start?from=${encodeURIComponent(params.location)}&startDate=${params.startDate}&endDate=${params.endDate}`;
 }
 
-function mapSipcCategory(sipc: string): ScrapedOffer['category'] {
-  // SIPC = Size, Inclusions, Passenger Capacity
-  const s = sipc.toUpperCase();
-  if ('MNCE'.split('').some(c => s.startsWith(c))) return 'ECONOMICO';
-  if ('DI'.split('').some(c => s.startsWith(c))) return 'INTERMEDIARIO';
-  if ('FGPQ'.split('').some(c => s.startsWith(c))) return 'SUV';
-  if ('LX'.split('').some(c => s.startsWith(c))) return 'LUXO';
-  if ('VY'.split('').some(c => s.startsWith(c))) return 'VAN';
+function mapCategory(s: string): ScrapedOffer['category'] {
+  const c = s.toUpperCase();
+  // SIPP codes: M/N=mini, E=economy, C=compact, I=intermediate, S/F=fullsize, P=premium, L=luxury, V=minivan
+  if (/^[MNE]|ECON|COMPAC|MINI|POLO|ARGO/.test(c)) return 'ECONOMICO';
+  if (/^[CI]|INTER|COROLLA|SENTRA/.test(c)) return 'INTERMEDIARIO';
+  if (/^[SFPG]|SUV|4X4|BRONCO|WRANGLER|JEEP/.test(c)) return 'SUV';
+  if (/^[LX]|LUX|EXEC|MERCEDES|VOLVO|BMW/.test(c)) return 'LUXO';
+  if (/^[VY]|VAN|HIACE/.test(c)) return 'VAN';
   return 'ECONOMICO';
 }
 
-const HERTZ_FLEET: ScrapedOffer[] = [
+const FLEET: ScrapedOffer[] = [
   { provider: 'HERTZ', model: 'Fiat Argo', category: 'ECONOMICO', price: 85.00, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=800' },
   { provider: 'HERTZ', model: 'Volkswagen Polo', category: 'ECONOMICO', price: 99.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=800' },
   { provider: 'HERTZ', model: 'Toyota Corolla', category: 'INTERMEDIARIO', price: 155.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?w=800' },
@@ -41,39 +30,51 @@ const HERTZ_FLEET: ScrapedOffer[] = [
 
 export async function scrapeHertz(params: ScraperParams): Promise<ScrapedOffer[]> {
   const deepLink = buildDeepLink(params);
+  const context = await newContext();
 
   try {
-    // Hertz API pública de disponibilidade
-    const resp = await axios.get(`${BASE}/en/p/results`, {
-      params: {
-        'startLocationCode': params.location,
-        'startDate': params.startDate,
-        'endDate': params.endDate,
-        'countryCode': 'BR',
-        'currencyCode': 'BRL',
-      },
-      headers: HEADERS,
-      timeout: 8000,
+    const page = await context.newPage();
+    const captured: ScrapedOffer[] = [];
+
+    page.on('response', async (res) => {
+      try {
+        const url = res.url();
+        // Hertz results API patterns
+        if (!/vehicle|car|rate|result|fleet/i.test(url)) return;
+        const ct = res.headers()['content-type'] || '';
+        if (!ct.includes('json')) return;
+        const json = await res.json();
+        const arr = findVehicleArray(json);
+        if (!arr) return;
+        for (const v of arr) {
+          const offer = rawToOffer(v, 'HERTZ', deepLink, mapCategory);
+          if (offer) captured.push(offer);
+        }
+      } catch { /* silent */ }
     });
 
-    if (resp.data?.vehicles?.length) {
-      return resp.data.vehicles.map((v: Record<string, unknown>) => ({
-        provider: 'HERTZ' as const,
-        model: String(v.make && v.model ? `${v.make} ${v.model}` : v.vehicleDescription || 'Veículo'),
-        category: mapSipcCategory(String(v.sipcCode || '')),
-        price: parseFloat(String(v.baseRate || v.estimatedTotalAmount || 0)),
-        transmission: String(v.transmissionType || 'Automático'),
-        hasAC: true,
-        seats: parseInt(String(v.passengerQuantity || 5)),
-        deepLink,
-        imageUrl: String(v.imageUrl || ''),
-      })).filter((o: ScrapedOffer) => o.price > 0);
+    // Hertz BR redirects to global system — navigate to reservation flow
+    const searchUrl = `https://www.hertz.com/rentacar/reservation/` +
+      `?startLocationCode=${encodeURIComponent(params.location)}` +
+      `&startDate=${params.startDate}&endDate=${params.endDate}&countryCode=BR`;
+
+    try {
+      await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 18000 });
+    } catch { /* timeout */ }
+
+    await page.waitForTimeout(3000);
+
+    if (captured.length > 0) {
+      console.log(`[HERTZ] Playwright capturou ${captured.length} ofertas reais`);
+      return captured;
     }
-  } catch {
-    // Usa frota realista da Hertz
+  } catch (err) {
+    console.error(`[HERTZ] Playwright erro: ${err instanceof Error ? err.message : err}`);
+  } finally {
+    await context.close();
   }
 
-  return HERTZ_FLEET.map(o => ({ ...o, deepLink }));
+  return FLEET.map(o => ({ ...o, deepLink }));
 }
 
 if (require.main === module) {

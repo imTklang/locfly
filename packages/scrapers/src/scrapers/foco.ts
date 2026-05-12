@@ -1,21 +1,22 @@
-import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ScraperParams, ScrapedOffer } from '../types';
-
-const BASE = 'https://www.focorental.com.br';
-
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'pt-BR,pt;q=0.9',
-  'Referer': 'https://www.focorental.com.br/',
-};
+import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 function buildDeepLink(params: ScraperParams): string {
   return `https://www.focorental.com.br/reserva?origem=${encodeURIComponent(params.location)}&retirada=${params.startDate}&devolucao=${params.endDate}`;
 }
 
-const FOCO_FLEET: ScrapedOffer[] = [
+function mapCategory(s: string): ScrapedOffer['category'] {
+  const c = s.toUpperCase();
+  if (/ECON|COMPAC|MINI|MOBI|HB20|SANDERO/.test(c)) return 'ECONOMICO';
+  if (/INTER|SEDAN|CRUZE|ETIOS/.test(c)) return 'INTERMEDIARIO';
+  if (/SUV|CROSS|TRACKER|T-CROSS|CRETA/.test(c)) return 'SUV';
+  if (/LUX|EXEC|LEXUS|BMW|AUDI/.test(c)) return 'LUXO';
+  if (/VAN|HIACE|DUCATO/.test(c)) return 'VAN';
+  return 'ECONOMICO';
+}
+
+const FLEET: ScrapedOffer[] = [
   { provider: 'FOCO', model: 'Fiat Mobi', category: 'ECONOMICO', price: 65.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800' },
   { provider: 'FOCO', model: 'Hyundai HB20', category: 'ECONOMICO', price: 78.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=800' },
   { provider: 'FOCO', model: 'Renault Sandero', category: 'ECONOMICO', price: 74.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=800' },
@@ -29,60 +30,68 @@ const FOCO_FLEET: ScrapedOffer[] = [
 
 export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]> {
   const deepLink = buildDeepLink(params);
+  const context = await newContext();
 
   try {
-    // Tenta API JSON primeiro
-    const jsonResp = await axios.get(`${BASE}/api/veiculos`, {
-      params: { origem: params.location, retirada: params.startDate, devolucao: params.endDate },
-      headers: { ...HEADERS, Accept: 'application/json' },
-      timeout: 6000,
+    const page = await context.newPage();
+    const captured: ScrapedOffer[] = [];
+
+    page.on('response', async (res) => {
+      try {
+        const ct = res.headers()['content-type'] || '';
+        if (ct.includes('json')) {
+          const json = await res.json();
+          const arr = findVehicleArray(json);
+          if (arr) {
+            for (const v of arr) {
+              const offer = rawToOffer(v, 'FOCO', deepLink, mapCategory);
+              if (offer) captured.push(offer);
+            }
+          }
+        }
+      } catch { /* silent */ }
     });
 
-    if (jsonResp.data?.veiculos?.length) {
-      return jsonResp.data.veiculos.map((v: Record<string, unknown>) => ({
-        provider: 'FOCO' as const,
-        model: String(v.nome || v.modelo || 'Veículo'),
-        category: 'ECONOMICO' as const,
-        price: parseFloat(String(v.diaria || v.preco || 0)),
-        transmission: 'Manual',
-        hasAC: true,
-        seats: 5,
-        deepLink,
-        imageUrl: String(v.foto || ''),
-      })).filter((o: ScrapedOffer) => o.price > 0);
+    try {
+      await page.goto('https://www.focorental.com.br/', { waitUntil: 'networkidle', timeout: 12000 });
+    } catch { /* timeout */ }
+
+    await page.waitForTimeout(2000);
+
+    // Foco may render fleet in HTML — try Cheerio on the loaded DOM
+    if (captured.length === 0) {
+      const html = await page.content();
+      const $ = cheerio.load(html);
+      $('.veiculo, .car-card, .vehicle-item, .frota-item, [class*="veiculo"], [class*="carro"]').each((_i, el) => {
+        const model = $(el).find('.nome, .title, h3, h4, [class*="nome"], [class*="model"]').first().text().trim();
+        const priceText = $(el).find('.preco, .price, .valor, [class*="preco"], [class*="price"]').first().text().trim();
+        const price = parseFloat(priceText.replace(/[^0-9,.]/g, '').replace(',', '.'));
+        if (model && price > 0) {
+          captured.push({
+            provider: 'FOCO',
+            model,
+            category: mapCategory(model),
+            price,
+            transmission: 'Manual',
+            hasAC: true,
+            seats: 5,
+            deepLink,
+          });
+        }
+      });
     }
 
-    // Fallback: parsing HTML com Cheerio
-    const htmlResp = await axios.get(`${BASE}/frota`, { headers: HEADERS, timeout: 8000 });
-    const $ = cheerio.load(htmlResp.data);
-    const offers: ScrapedOffer[] = [];
-
-    // Tenta extrair cards de veículos do HTML
-    $('.veiculo, .car-card, .vehicle-item').each((_i, el) => {
-      const model = $(el).find('.nome, .title, h3, h4').first().text().trim();
-      const priceText = $(el).find('.preco, .price, .valor').first().text().trim();
-      const price = parseFloat(priceText.replace(/[^0-9,.]/g, '').replace(',', '.'));
-
-      if (model && price > 0) {
-        offers.push({
-          provider: 'FOCO',
-          model,
-          category: 'ECONOMICO',
-          price,
-          transmission: 'Manual',
-          hasAC: true,
-          seats: 5,
-          deepLink,
-        });
-      }
-    });
-
-    if (offers.length > 0) return offers;
-  } catch {
-    // Usa frota realista da Foco
+    if (captured.length > 0) {
+      console.log(`[FOCO] Playwright capturou ${captured.length} ofertas reais`);
+      return captured;
+    }
+  } catch (err) {
+    console.error(`[FOCO] Playwright erro: ${err instanceof Error ? err.message : err}`);
+  } finally {
+    await context.close();
   }
 
-  return FOCO_FLEET.map(o => ({ ...o, deepLink }));
+  return FLEET.map(o => ({ ...o, deepLink }));
 }
 
 if (require.main === module) {

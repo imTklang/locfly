@@ -1,30 +1,21 @@
-import axios from 'axios';
 import { ScraperParams, ScrapedOffer } from '../types';
-
-const BASE = 'https://www.unidas.com.br';
-
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'pt-BR,pt;q=0.9',
-  'Referer': 'https://www.unidas.com.br/',
-};
+import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 function buildDeepLink(params: ScraperParams): string {
   return `https://www.unidas.com.br/reservas?local=${encodeURIComponent(params.location)}&retirada=${params.startDate}&devolucao=${params.endDate}`;
 }
 
-function mapCategory(group: string): ScrapedOffer['category'] {
-  const g = group.toUpperCase();
-  if (g.includes('A') || g.includes('MINI') || g.includes('ECON')) return 'ECONOMICO';
-  if (g.includes('B') || g.includes('INTER') || g.includes('SEDAN')) return 'INTERMEDIARIO';
-  if (g.includes('C') || g.includes('SUV') || g.includes('4X4')) return 'SUV';
-  if (g.includes('D') || g.includes('LUX') || g.includes('EXEC')) return 'LUXO';
-  if (g.includes('VAN') || g.includes('CARGO')) return 'VAN';
+function mapCategory(g: string): ScrapedOffer['category'] {
+  const s = g.toUpperCase();
+  if (/ECON|COMPAC|MINI|PEQU|MOBI|GOL|HB20|^[AM]/.test(s)) return 'ECONOMICO';
+  if (/INTER|SEDAN|MED|VIRTUS|CRUZE|^[BI]/.test(s)) return 'INTERMEDIARIO';
+  if (/SUV|4X4|RENEGADE|ECLIPSE|COMPASS|^[CF]/.test(s)) return 'SUV';
+  if (/LUX|EXEC|PREM|GRAND|^[DL]/.test(s)) return 'LUXO';
+  if (/VAN|CARGO|SPRINTER|^[VY]/.test(s)) return 'VAN';
   return 'ECONOMICO';
 }
 
-const UNIDAS_FLEET: ScrapedOffer[] = [
+const FLEET: ScrapedOffer[] = [
   { provider: 'UNIDAS', model: 'Fiat Mobi', category: 'ECONOMICO', price: 68.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800' },
   { provider: 'UNIDAS', model: 'Volkswagen Gol', category: 'ECONOMICO', price: 74.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=800' },
   { provider: 'UNIDAS', model: 'Hyundai HB20S', category: 'ECONOMICO', price: 88.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=800' },
@@ -33,41 +24,55 @@ const UNIDAS_FLEET: ScrapedOffer[] = [
   { provider: 'UNIDAS', model: 'Jeep Renegade', category: 'SUV', price: 239.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1609521263047-f8f205293f24?w=800' },
   { provider: 'UNIDAS', model: 'Mitsubishi Eclipse Cross', category: 'SUV', price: 264.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=800' },
   { provider: 'UNIDAS', model: 'Jeep Grand Cherokee', category: 'LUXO', price: 490.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1614200187524-dc4b892acf16?w=800' },
-  { provider: 'UNIDAS', model: 'Mercedes-Benz Sprinter', category: 'VAN', price: 380.00, transmission: 'Manual', hasAC: true, seats: 15, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800' },
+  { provider: 'UNIDAS', model: 'Fiat Ducato', category: 'VAN', price: 350.00, transmission: 'Manual', hasAC: true, seats: 15, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=800' },
 ];
 
 export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[]> {
   const deepLink = buildDeepLink(params);
+  const context = await newContext();
 
   try {
-    const resp = await axios.get(`${BASE}/api/cotacao`, {
-      params: {
-        origem: params.location,
-        dataRetirada: params.startDate,
-        dataDevolucao: params.endDate,
-      },
-      headers: HEADERS,
-      timeout: 8000,
+    const page = await context.newPage();
+    const captured: ScrapedOffer[] = [];
+
+    page.on('response', async (res) => {
+      try {
+        const ct = res.headers()['content-type'] || '';
+        if (!ct.includes('json')) return;
+        const json = await res.json();
+        const arr = findVehicleArray(json);
+        if (!arr) return;
+        for (const v of arr) {
+          const offer = rawToOffer(v, 'UNIDAS', deepLink, mapCategory);
+          if (offer) captured.push(offer);
+        }
+      } catch { /* silent */ }
     });
 
-    if (resp.data?.veiculos?.length) {
-      return resp.data.veiculos.map((v: Record<string, unknown>) => ({
-        provider: 'UNIDAS' as const,
-        model: String(v.descricao || v.modelo || 'Veículo'),
-        category: mapCategory(String(v.grupo || v.categoria || '')),
-        price: parseFloat(String(v.valorDiaria || v.preco || 0)),
-        transmission: String(v.cambio || 'Automático'),
-        hasAC: true,
-        seats: parseInt(String(v.passageiros || 5)),
-        deepLink,
-        imageUrl: String(v.imagem || ''),
-      })).filter((o: ScrapedOffer) => o.price > 0);
+    try {
+      await page.goto('https://www.unidas.com.br/', { waitUntil: 'networkidle', timeout: 15000 });
+    } catch { /* networkidle timeout */ }
+
+    // Try filling the search form
+    try {
+      await page.fill('input[name*="local"], input[placeholder*="local"], input[placeholder*="cidade"]', params.location);
+      await page.fill('input[name*="retirada"], input[placeholder*="retirada"], input[type="date"]:first-of-type', params.startDate);
+      await page.fill('input[name*="devolucao"], input[placeholder*="devoluc"], input[type="date"]:last-of-type', params.endDate);
+      await page.click('button[type="submit"], button:has-text("Buscar"), button:has-text("Pesquisar")');
+      await page.waitForTimeout(5000);
+    } catch { /* form interaction failed — no problem */ }
+
+    if (captured.length > 0) {
+      console.log(`[UNIDAS] Playwright capturou ${captured.length} ofertas reais`);
+      return captured;
     }
-  } catch {
-    // Usa frota realista da Unidas
+  } catch (err) {
+    console.error(`[UNIDAS] Playwright erro: ${err instanceof Error ? err.message : err}`);
+  } finally {
+    await context.close();
   }
 
-  return UNIDAS_FLEET.map(o => ({ ...o, deepLink }));
+  return FLEET.map(o => ({ ...o, deepLink }));
 }
 
 if (require.main === module) {
