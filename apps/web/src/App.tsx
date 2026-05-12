@@ -11,8 +11,13 @@ function App() {
   const [location, setLocation] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [searchError, setSearchError] = useState('');
 
   function handleSearch() {
+    if (!location.trim()) { setSearchError('Informe a cidade ou aeroporto'); return; }
+    if (!startDate || !endDate) { setSearchError('Selecione as datas de retirada e devolução'); return; }
+    if (endDate < startDate) { setSearchError('A data de devolução deve ser após a retirada'); return; }
+    setSearchError('');
     const params = new URLSearchParams({ location, startDate, endDate });
     navigate(`/search?${params}`);
   }
@@ -155,6 +160,9 @@ function App() {
                 </button>
               </div>
             </div>
+            {searchError && (
+              <p className="text-center text-sm text-red-400 mt-3 animate-pulse">{searchError}</p>
+            )}
           </motion.div>
         </div>
       </main>

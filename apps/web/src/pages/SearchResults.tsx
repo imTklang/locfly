@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
-import { MapPin, Calendar, Heart, ExternalLink, Loader2, Zap, SlidersHorizontal } from 'lucide-react';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { MapPin, Calendar, Heart, ExternalLink, Zap, SlidersHorizontal, Bell, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { useToast, ToastContainer } from '../components/Toast';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -30,15 +32,142 @@ const PROVIDER_COLORS: Record<string, string> = {
   HERTZ: 'bg-yellow-500/20 text-yellow-300',
 };
 
+function SkeletonCard() {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden animate-pulse">
+      <div className="h-44 bg-white/10" />
+      <div className="p-4 space-y-3">
+        <div className="flex justify-between">
+          <div className="space-y-2">
+            <div className="h-4 w-32 rounded bg-white/10" />
+            <div className="h-3 w-20 rounded bg-white/10" />
+          </div>
+          <div className="space-y-2 items-end flex flex-col">
+            <div className="h-5 w-20 rounded bg-white/10" />
+            <div className="h-3 w-10 rounded bg-white/10" />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <div className="h-6 w-16 rounded-full bg-white/10" />
+          <div className="h-6 w-14 rounded-full bg-white/10" />
+          <div className="h-6 w-18 rounded-full bg-white/10" />
+        </div>
+        <div className="flex justify-between items-center pt-1">
+          <div className="h-4 w-28 rounded bg-white/10" />
+          <div className="h-8 w-20 rounded-xl bg-white/10" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface AlertModalProps {
+  location: string;
+  token: string;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function AlertModal({ location, token, onClose, onSaved }: AlertModalProps) {
+  const [targetPrice, setTargetPrice] = useState('');
+  const [carCategory, setCarCategory] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!targetPrice || parseFloat(targetPrice) <= 0) return;
+    setSaving(true);
+    try {
+      await fetch(`${API}/api/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ location, targetPrice: parseFloat(targetPrice), carCategory: carCategory || undefined }),
+      });
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      >
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.9, opacity: 0 }}
+          className="relative z-10 w-full max-w-sm rounded-2xl border border-white/10 bg-[#0e0e0e] p-6 shadow-2xl"
+        >
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <Bell className="h-5 w-5 text-[#0070F3]" />
+              <h2 className="font-semibold text-lg">Criar alerta de preço</h2>
+            </div>
+            <button onClick={onClose} className="text-white/30 hover:text-white transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1 block">Local</label>
+              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white/60">{location || 'Qualquer local'}</div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1 block">Preço alvo (R$/dia)</label>
+              <input
+                type="number"
+                min="1"
+                value={targetPrice}
+                onChange={e => setTargetPrice(e.target.value)}
+                placeholder="Ex: 120"
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none focus:border-[#0070F3]/50 transition-colors placeholder:text-white/30"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-1 block">Categoria (opcional)</label>
+              <select
+                value={carCategory}
+                onChange={e => setCarCategory(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#0e0e0e] px-3 py-2.5 text-sm text-white outline-none focus:border-[#0070F3]/50 transition-colors"
+              >
+                <option value="">Qualquer categoria</option>
+                {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <button
+            onClick={save}
+            disabled={saving || !targetPrice}
+            className="mt-6 w-full rounded-xl bg-[#0070F3] py-3 text-sm font-semibold hover:bg-[#0060D9] transition-colors disabled:opacity-40"
+          >
+            {saving ? 'Salvando...' : 'Criar alerta'}
+          </button>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 export default function SearchResults() {
   const [params] = useSearchParams();
   const { token } = useAuth();
+  const navigate = useNavigate();
+  const { toasts, addToast, removeToast } = useToast();
   const [offers, setOffers] = useState<CarOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
 
   const location = params.get('location') || '';
   const startDate = params.get('startDate') || '';
@@ -74,15 +203,21 @@ export default function SearchResults() {
   }
 
   async function toggleBookmark(id: string) {
-    if (!token) return;
+    if (!token) { navigate('/login'); return; }
     const isBookmarked = bookmarked.has(id);
     const method = isBookmarked ? 'DELETE' : 'POST';
     await fetch(`${API}/api/bookmarks/${id}`, { method, headers: { Authorization: `Bearer ${token}` } });
     setBookmarked(prev => {
       const next = new Set(prev);
-      if (isBookmarked) next.delete(id); else next.add(id);
+      if (isBookmarked) { next.delete(id); addToast('Removido dos favoritos', 'info'); }
+      else { next.add(id); addToast('Adicionado aos favoritos ❤️', 'success'); }
       return next;
     });
+  }
+
+  function handleAlertClick() {
+    if (!token) { navigate('/login'); return; }
+    setShowAlertModal(true);
   }
 
   const days = startDate && endDate
@@ -114,17 +249,26 @@ export default function SearchResults() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">
-              {loading ? 'Buscando...' : `${offers.length} carros encontrados`}
+              {loading ? 'Consultando locadoras...' : `${offers.length} carros encontrados`}
             </h1>
             <p className="text-sm text-white/40 mt-1">Ordenados por menor preço · {days} dia{days > 1 ? 's' : ''}</p>
           </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 transition-all"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            Filtros
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAlertClick}
+              className="flex items-center gap-2 rounded-xl border border-[#0070F3]/30 bg-[#0070F3]/10 px-4 py-2 text-sm text-[#0070F3] hover:bg-[#0070F3]/20 transition-all"
+            >
+              <Bell className="h-4 w-4" />
+              Alerta de preço
+            </button>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 transition-all"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Filtros
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -157,9 +301,8 @@ export default function SearchResults() {
 
         {/* Results */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-32 gap-4">
-            <Loader2 className="h-10 w-10 animate-spin text-[#0070F3]" />
-            <p className="text-white/40">Consultando locadoras em tempo real...</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
         ) : offers.length === 0 ? (
           <div className="text-center py-32 text-white/40">
@@ -169,22 +312,27 @@ export default function SearchResults() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {offers.map((offer) => (
-              <div key={offer.id} className="group relative rounded-2xl border border-white/10 bg-white/5 overflow-hidden hover:border-white/20 transition-all">
+              <motion.div
+                key={offer.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="group relative rounded-2xl border border-white/10 bg-white/5 overflow-hidden hover:border-white/20 transition-all"
+              >
                 {/* Image */}
                 <div className="relative h-44 overflow-hidden bg-[#111]">
-                  {offer.imageUrl && (
+                  {offer.imageUrl ? (
                     <img src={offer.imageUrl} alt={offer.model} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white/10 text-4xl">🚗</div>
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                   {/* Bookmark */}
-                  {token && (
-                    <button
-                      onClick={() => toggleBookmark(offer.id)}
-                      className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full backdrop-blur-sm transition-all ${bookmarked.has(offer.id) ? 'bg-red-500 text-white' : 'bg-black/40 text-white/70 hover:text-white'}`}
-                    >
-                      <Heart className={`h-4 w-4 ${bookmarked.has(offer.id) ? 'fill-current' : ''}`} />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => toggleBookmark(offer.id)}
+                    className={`absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full backdrop-blur-sm transition-all ${bookmarked.has(offer.id) ? 'bg-red-500 text-white' : 'bg-black/40 text-white/70 hover:text-white'}`}
+                  >
+                    <Heart className={`h-4 w-4 ${bookmarked.has(offer.id) ? 'fill-current' : ''}`} />
+                  </button>
                   {/* Provider badge */}
                   <span className={`absolute bottom-3 left-3 rounded-full px-2 py-0.5 text-xs font-semibold ${PROVIDER_COLORS[offer.provider] || 'bg-white/20 text-white'}`}>
                     {offer.provider}
@@ -222,11 +370,22 @@ export default function SearchResults() {
                     </a>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
       </div>
+
+      {showAlertModal && token && (
+        <AlertModal
+          location={location}
+          token={token}
+          onClose={() => setShowAlertModal(false)}
+          onSaved={() => addToast('Alerta criado! Você será notificado quando o preço cair.', 'success')}
+        />
+      )}
+
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>
   );
 }
