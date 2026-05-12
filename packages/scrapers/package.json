@@ -1,0 +1,25 @@
+{
+  "name": "scrapers",
+  "version": "1.0.0",
+  "description": "LocFly scrapers para locadoras brasileiras",
+  "main": "src/index.ts",
+  "type": "commonjs",
+  "scripts": {
+    "test:localiza": "ts-node src/scrapers/localiza.ts",
+    "test:movida": "ts-node src/scrapers/movida.ts",
+    "test:unidas": "ts-node src/scrapers/unidas.ts",
+    "test:hertz": "ts-node src/scrapers/hertz.ts",
+    "test:foco": "ts-node src/scrapers/foco.ts",
+    "test:all": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "cheerio": "^1.0.0",
+    "dotenv": "^17.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

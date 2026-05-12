@@ -7,7 +7,23 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+}
+
+enum Provider {
+  MOVIDA
+  LOCALIZA
+  UNIDAS
+  FOCO
+  HERTZ
+  OTHER
+}
+
+enum Category {
+  ECONOMICO
+  INTERMEDIARIO
+  SUV
+  LUXO
+  VAN
 }
 
 model User {
@@ -18,6 +34,7 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   priceAlerts   PriceAlert[]
+  bookmarks     Bookmark[]
 }
 
 model SearchCache {
@@ -42,11 +59,22 @@ model PriceAlert {
   createdAt     DateTime  @default(now())
 }
 
+model Bookmark {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  carOfferId    String
+  carOffer      CarOffer  @relation(fields: [carOfferId], references: [id])
+  createdAt     DateTime  @default(now())
+
+  @@unique([userId, carOfferId])
+}
+
 model CarOffer {
   id            String    @id @default(uuid())
-  provider      String    // ex: Movida, Localiza
+  provider      Provider  @default(OTHER)
   model         String
-  category      String
+  category      Category  @default(ECONOMICO)
   price         Decimal
   transmission  String?
   hasAC         Boolean?
@@ -54,4 +82,5 @@ model CarOffer {
   deepLink      String
   imageUrl      String?
   createdAt     DateTime  @default(now())
+  bookmarks     Bookmark[]
 }

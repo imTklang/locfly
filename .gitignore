@@ -12,3 +12,22 @@ build/
 /packages/database/node_modules/
 /packages/scrapers/node_modules/
 
+
+# ── GSD baseline (auto-generated) ──
+.gsd
+Thumbs.db
+*.swp
+*.swo
+*~
+*.code-workspace
+!.env.example
+.next/
+__pycache__/
+*.pyc
+.venv/
+venv/
+target/
+vendor/
+coverage/
+.cache/
+tmp/
