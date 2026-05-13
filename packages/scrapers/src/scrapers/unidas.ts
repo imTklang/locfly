@@ -1,8 +1,27 @@
+import https from 'https';
 import { ScraperParams, ScrapedOffer } from '../types';
 import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 function buildDeepLink(params: ScraperParams): string {
   return `https://www.unidas.com.br/reservas?local=${encodeURIComponent(params.location)}&retirada=${params.startDate}&devolucao=${params.endDate}`;
+}
+
+// Resolves location to nearest Unidas airport store code via public API
+async function resolveStoreCode(location: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const url = `https://apisiterac.unidas.com.br/api/v3/stores/details?keyWord=${encodeURIComponent(location)}&storeType=0`;
+    https.get(url, { headers: { 'Accept': 'application/json' } }, (res) => {
+      let body = '';
+      res.on('data', (c) => body += c);
+      res.on('end', () => {
+        try {
+          const d = JSON.parse(body);
+          resolve(d?.data?.[0]?.storeCode || null);
+        } catch { resolve(null); }
+      });
+      res.on('error', () => resolve(null));
+    }).on('error', () => resolve(null));
+  });
 }
 
 function mapCategory(g: string): ScrapedOffer['category'] {
@@ -60,14 +79,21 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
       await page.goto('https://www.unidas.com.br/', { waitUntil: 'domcontentloaded', timeout: 15000 });
     } catch { /* timeout */ }
 
-    // Try filling the search form
+    // Try filling the search form — Unidas uses Angular Material (placeholder="Loja de retirada")
     try {
-      await page.fill('input[name*="local"], input[placeholder*="local"], input[placeholder*="cidade"]', params.location);
-      await page.fill('input[name*="retirada"], input[placeholder*="retirada"], input[type="date"]:first-of-type', params.startDate);
-      await page.fill('input[name*="devolucao"], input[placeholder*="devoluc"], input[type="date"]:last-of-type', params.endDate);
-      await page.click('button[type="submit"], button:has-text("Buscar"), button:has-text("Pesquisar")');
-      await page.waitForTimeout(5000);
-    } catch { /* form interaction failed — no problem */ }
+      const storeInput = await page.waitForSelector('input[placeholder="Loja de retirada"]', { timeout: 12000 });
+      if (storeInput) {
+        await storeInput.click();
+        await storeInput.type(params.location, { delay: 100 });
+        await page.waitForTimeout(2500);
+        const option = await page.$('mat-option, [role="option"]');
+        if (option) await option.click();
+        else { await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); }
+        await page.waitForTimeout(2000);
+        await page.click('button[type="submit"], button:has-text("Buscar"), button:has-text("Pesquisar")').catch(() => {});
+        await page.waitForTimeout(6000);
+      }
+    } catch { /* form interaction failed */ }
 
     if (captured.length > 0) {
       console.log(`[UNIDAS] ✓ ${captured.length} ofertas reais capturadas`);
