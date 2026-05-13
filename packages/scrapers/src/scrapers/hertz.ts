@@ -38,14 +38,16 @@ export async function scrapeHertz(params: ScraperParams): Promise<ScrapedOffer[]
 
     page.on('response', async (res) => {
       try {
-        const url = res.url();
-        // Hertz results API patterns
-        if (!/vehicle|car|rate|result|fleet/i.test(url)) return;
         const ct = res.headers()['content-type'] || '';
         if (!ct.includes('json')) return;
+        const url = res.url();
         const json = await res.json();
         const arr = findVehicleArray(json);
-        if (!arr) return;
+        if (!arr) {
+          console.log(`[HERTZ][json] ${url.slice(0, 90)}`);
+          return;
+        }
+        console.log(`[HERTZ][🎯 veículos] ${url.slice(0, 90)} → ${arr.length} itens`);
         for (const v of arr) {
           const offer = rawToOffer(v, 'HERTZ', deepLink, mapCategory);
           if (offer) captured.push(offer);
@@ -53,16 +55,15 @@ export async function scrapeHertz(params: ScraperParams): Promise<ScrapedOffer[]
       } catch { /* silent */ }
     });
 
-    // Hertz BR redirects to global system — navigate to reservation flow
     const searchUrl = `https://www.hertz.com/rentacar/reservation/` +
       `?startLocationCode=${encodeURIComponent(params.location)}` +
       `&startDate=${params.startDate}&endDate=${params.endDate}&countryCode=BR`;
 
     try {
-      await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 18000 });
+      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 18000 });
     } catch { /* timeout */ }
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
 
     if (captured.length > 0) {
       console.log(`[HERTZ] Playwright capturou ${captured.length} ofertas reais`);

@@ -39,9 +39,16 @@ export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[
       try {
         const ct = res.headers()['content-type'] || '';
         if (!ct.includes('json')) return;
+        const url = res.url();
         const json = await res.json();
         const arr = findVehicleArray(json);
-        if (!arr) return;
+        if (!arr) {
+          if (/api|cotacao|veiculos|search/i.test(url)) {
+            console.log(`[MOVIDA][json] ${url.slice(0, 90)}`);
+          }
+          return;
+        }
+        console.log(`[MOVIDA][🎯 veículos] ${url.slice(0, 90)} → ${arr.length} itens`);
         for (const v of arr) {
           const offer = rawToOffer(v, 'MOVIDA', deepLink, mapCategory);
           if (offer) captured.push(offer);
@@ -49,18 +56,50 @@ export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[
       } catch { /* silent */ }
     });
 
+    // Navega para a home (URL com params redireciona para 404 na Movida)
     try {
-      await page.goto(deepLink, { waitUntil: 'networkidle', timeout: 15000 });
-    } catch { /* networkidle timeout */ }
+      await page.goto('https://www.movida.com.br/locacao-de-veiculos', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    } catch { /* timeout */ }
 
     await page.waitForTimeout(3000);
 
+    // Preenche formulário para disparar chamada à API de disponibilidade
+    if (captured.length === 0) {
+      try {
+        const locInput = await page.waitForSelector(
+          'input[placeholder*="cidade"], input[placeholder*="origem"], input[name*="cidade"], input[name*="origem"], input[aria-label*="cidade"]',
+          { timeout: 6000 }
+        );
+        if (locInput) {
+          await locInput.fill(params.location);
+          await page.waitForTimeout(1500);
+          const suggestion = await page.$('[role="option"]:first-child, [class*="suggestion"]:first-child, [class*="autocomplete"] li:first-child');
+          if (suggestion) await suggestion.click();
+          else { await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); }
+          await page.waitForTimeout(800);
+        }
+        // Tenta preencher datas
+        const dateInputs = await page.$$('input[type="date"]');
+        if (dateInputs.length >= 2) {
+          await dateInputs[0].fill(params.startDate);
+          await dateInputs[1].fill(params.endDate);
+        } else {
+          await page.fill('input[placeholder*="retirada"], input[name*="retirada"]', params.startDate).catch(() => {});
+          await page.fill('input[placeholder*="devolu"], input[name*="devolu"]', params.endDate).catch(() => {});
+        }
+        await page.click('button[type="submit"], button:has-text("Buscar"), button:has-text("Ver preços")').catch(() => {});
+        await page.waitForTimeout(6000);
+      } catch { /* form não disponível */ }
+    }
+
     if (captured.length > 0) {
-      console.log(`[MOVIDA] Playwright capturou ${captured.length} ofertas reais`);
+      console.log(`[MOVIDA] ✓ ${captured.length} ofertas reais capturadas`);
       return captured;
     }
+
+    console.log(`[MOVIDA] ✗ sem dados reais — usando frota de referência`);
   } catch (err) {
-    console.error(`[MOVIDA] Playwright erro: ${err instanceof Error ? err.message : err}`);
+    console.error(`[MOVIDA] erro: ${err instanceof Error ? err.message : err}`);
   } finally {
     await context.close();
   }
@@ -69,7 +108,7 @@ export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[
 }
 
 if (require.main === module) {
-  scrapeMovida({ location: 'São Paulo', startDate: '2026-06-01', endDate: '2026-06-05' })
+  scrapeMovida({ location: 'São Paulo', startDate: '2026-06-15', endDate: '2026-06-20' })
     .then(r => console.log(`Movida: ${r.length} ofertas\n`, r.slice(0, 2)))
     .catch(console.error);
 }

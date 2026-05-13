@@ -1,49 +1,64 @@
-import { chromium, Browser, BrowserContext } from 'playwright';
+import { chromium as chromiumExtra } from 'playwright-extra';
+// @ts-ignore — sem tipagem completa no playwright-extra
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import type { Browser, BrowserContext } from 'playwright';
 import { ScrapedOffer } from './types';
+
+chromiumExtra.use(StealthPlugin());
 
 let _browser: Browser | null = null;
 
 export async function getBrowser(): Promise<Browser> {
-  if (!_browser || !_browser.isConnected()) {
-    _browser = await chromium.launch({
+  if (!_browser || !(_browser as Browser).isConnected()) {
+    _browser = await (chromiumExtra.launch({
       headless: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
         '--disable-dev-shm-usage',
+        '--disable-gpu',
       ],
-    });
+    }) as unknown as Promise<Browser>);
   }
-  return _browser;
+  return _browser!;
 }
 
 export async function newContext(): Promise<BrowserContext> {
   const browser = await getBrowser();
   return browser.newContext({
-    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
     viewport: { width: 1366, height: 768 },
     extraHTTPHeaders: {
-      'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     },
   });
 }
 
 export async function closeBrowser(): Promise<void> {
   if (_browser) {
-    await _browser.close();
+    await (_browser as Browser).close();
     _browser = null;
   }
 }
 
 // ── JSON response mining helpers ────────────────────────────────────────────
 
-const PRICE_KEYS = ['price', 'preco', 'valor', 'diaria', 'dailyRate', 'rate',
-  'totalPrice', 'amount', 'tarifa', 'valorDiaria', 'baseRate', 'estimatedTotalAmount'];
-const MODEL_KEYS = ['model', 'modelo', 'description', 'descricao', 'name', 'nome',
-  'vehicleName', 'groupDescription', 'make', 'vehicleDescription', 'carName'];
+const PRICE_KEYS = [
+  'price', 'preco', 'valor', 'diaria', 'dailyRate', 'rate',
+  'totalPrice', 'amount', 'tarifa', 'valorDiaria', 'baseRate',
+  'estimatedTotalAmount', 'valorTotal', 'precoTotal', 'vlrDiaria',
+  'vlr_diaria', 'price_per_day', 'dailyPrice',
+];
+
+const MODEL_KEYS = [
+  'model', 'modelo', 'description', 'descricao', 'name', 'nome',
+  'vehicleName', 'groupDescription', 'make', 'vehicleDescription',
+  'carName', 'nomeVeiculo', 'nomeModelo', 'modelName', 'grupoDescricao',
+  'grupo', 'groupName',
+];
 
 function hasPrice(obj: unknown): boolean {
   if (!obj || typeof obj !== 'object') return false;
@@ -58,18 +73,25 @@ export function findVehicleArray(json: unknown): Record<string, unknown>[] | nul
   if (!json || typeof json !== 'object') return null;
 
   if (Array.isArray(json)) {
-    if (json.length > 0 && hasPrice(json[0])) return json;
+    if (json.length > 0 && hasPrice(json[0])) return json as Record<string, unknown>[];
+    // recurse into first element if it's an object
+    if (json.length > 0 && typeof json[0] === 'object') {
+      return findVehicleArray(json[0]);
+    }
     return null;
   }
 
   const o = json as Record<string, unknown>;
-  const ARRAY_KEYS = ['vehicles', 'veiculos', 'result', 'results', 'data', 'items',
-    'cars', 'carGroups', 'vehicleGroups', 'grupos', 'fleet', 'carros'];
+  const ARRAY_KEYS = [
+    'vehicles', 'veiculos', 'result', 'results', 'data', 'items',
+    'cars', 'carGroups', 'vehicleGroups', 'grupos', 'fleet', 'carros',
+    'list', 'lista', 'content', 'payload', 'response', 'offers',
+    'availabilities', 'availableVehicles', 'veiculosDisponiveis',
+  ];
 
   for (const key of ARRAY_KEYS) {
     const val = o[key];
-    if (Array.isArray(val) && val.length > 0 && hasPrice(val[0])) return val;
-    // nested: { data: { vehicles: [...] } }
+    if (Array.isArray(val) && val.length > 0 && hasPrice(val[0])) return val as Record<string, unknown>[];
     if (val && typeof val === 'object' && !Array.isArray(val)) {
       const inner = findVehicleArray(val);
       if (inner) return inner;
@@ -95,11 +117,14 @@ export function rawToOffer(
 
   if (!model || price <= 0) return null;
 
-  const catRaw = String(v.category || v.categoria || v.group || v.grupo || v.sipp || v.sipc || v.groupCode || '');
+  const catRaw = String(
+    v.category || v.categoria || v.group || v.grupo || v.sipp || v.sipc ||
+    v.groupCode || v.codigoGrupo || v.tipo || ''
+  );
   const transRaw = String(v.transmission || v.cambio || v.transmissao || v.transmissionType || '');
   const trans = /auto|cvt|atm/i.test(transRaw) ? 'Automático' : transRaw || 'Manual';
   const seats = parseInt(String(v.seats || v.passageiros || v.passengers || v.passengerQuantity || 5)) || 5;
-  const image = String(v.imageUrl || v.imagem || v.foto || v.image || v.imageURL || v.photo || '');
+  const image = String(v.imageUrl || v.imagem || v.foto || v.image || v.imageURL || v.photo || v.fotoUrl || '');
 
   return {
     provider,

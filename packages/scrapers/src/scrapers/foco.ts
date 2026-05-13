@@ -39,21 +39,24 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
     page.on('response', async (res) => {
       try {
         const ct = res.headers()['content-type'] || '';
-        if (ct.includes('json')) {
-          const json = await res.json();
-          const arr = findVehicleArray(json);
-          if (arr) {
-            for (const v of arr) {
-              const offer = rawToOffer(v, 'FOCO', deepLink, mapCategory);
-              if (offer) captured.push(offer);
-            }
-          }
+        if (!ct.includes('json')) return;
+        const url = res.url();
+        const json = await res.json();
+        const arr = findVehicleArray(json);
+        if (!arr) {
+          console.log(`[FOCO][json] ${url.slice(0, 90)}`);
+          return;
+        }
+        console.log(`[FOCO][🎯 veículos] ${url.slice(0, 90)} → ${arr.length} itens`);
+        for (const v of arr) {
+          const offer = rawToOffer(v, 'FOCO', deepLink, mapCategory);
+          if (offer) captured.push(offer);
         }
       } catch { /* silent */ }
     });
 
     try {
-      await page.goto('https://www.focorental.com.br/', { waitUntil: 'networkidle', timeout: 12000 });
+      await page.goto('https://www.focorental.com.br/', { waitUntil: 'domcontentloaded', timeout: 12000 });
     } catch { /* timeout */ }
 
     await page.waitForTimeout(2000);
@@ -82,11 +85,13 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
     }
 
     if (captured.length > 0) {
-      console.log(`[FOCO] Playwright capturou ${captured.length} ofertas reais`);
+      console.log(`[FOCO] ✓ ${captured.length} ofertas reais capturadas`);
       return captured;
     }
+
+    console.log(`[FOCO] ✗ sem dados reais — usando frota de referência`);
   } catch (err) {
-    console.error(`[FOCO] Playwright erro: ${err instanceof Error ? err.message : err}`);
+    console.error(`[FOCO] erro: ${err instanceof Error ? err.message : err}`);
   } finally {
     await context.close();
   }

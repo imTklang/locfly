@@ -39,9 +39,16 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
       try {
         const ct = res.headers()['content-type'] || '';
         if (!ct.includes('json')) return;
+        const url = res.url();
         const json = await res.json();
         const arr = findVehicleArray(json);
-        if (!arr) return;
+        if (!arr) {
+          if (/api|veicul|cotacao|reserva/i.test(url)) {
+            console.log(`[UNIDAS][json] ${url.slice(0, 90)}`);
+          }
+          return;
+        }
+        console.log(`[UNIDAS][🎯 veículos] ${url.slice(0, 90)} → ${arr.length} itens`);
         for (const v of arr) {
           const offer = rawToOffer(v, 'UNIDAS', deepLink, mapCategory);
           if (offer) captured.push(offer);
@@ -50,8 +57,8 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
     });
 
     try {
-      await page.goto('https://www.unidas.com.br/', { waitUntil: 'networkidle', timeout: 15000 });
-    } catch { /* networkidle timeout */ }
+      await page.goto('https://www.unidas.com.br/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    } catch { /* timeout */ }
 
     // Try filling the search form
     try {
@@ -63,11 +70,13 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
     } catch { /* form interaction failed — no problem */ }
 
     if (captured.length > 0) {
-      console.log(`[UNIDAS] Playwright capturou ${captured.length} ofertas reais`);
+      console.log(`[UNIDAS] ✓ ${captured.length} ofertas reais capturadas`);
       return captured;
     }
+
+    console.log(`[UNIDAS] ✗ sem dados reais — usando frota de referência`);
   } catch (err) {
-    console.error(`[UNIDAS] Playwright erro: ${err instanceof Error ? err.message : err}`);
+    console.error(`[UNIDAS] erro: ${err instanceof Error ? err.message : err}`);
   } finally {
     await context.close();
   }
