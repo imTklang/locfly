@@ -1,3 +1,6 @@
+x-db-url: &db-url postgresql://locfly_user:locfly_password@localhost:5433/locfly_db
+x-redis-url: &redis-url redis://localhost:6379
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -11,6 +14,12 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U locfly_user -d locfly_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -18,6 +27,15 @@ services:
     restart: always
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   postgres_data:
+  redis_data:
