@@ -2,22 +2,34 @@ import https from 'https';
 import { ScraperParams, ScrapedOffer } from '../types';
 import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
-function buildDeepLink(params: ScraperParams): string {
-  return `https://www.unidas.com.br/reservas?local=${encodeURIComponent(params.location)}&retirada=${params.startDate}&devolucao=${params.endDate}`;
+interface StoreInfo {
+  code: string;
+  name: string;
 }
 
-// Resolves location to nearest Unidas airport store code via public API
-async function resolveStoreCode(location: string): Promise<string | null> {
+function buildDeepLink(params: ScraperParams, storeCode?: string | null): string {
+  const q = new URLSearchParams({ retirada: params.startDate, devolucao: params.endDate });
+  if (storeCode) q.set('agencia', storeCode);
+  else q.set('local', params.location);
+  return `https://www.unidas.com.br/reservas?${q}`;
+}
+
+// Resolve location to nearest Unidas airport store via public API
+async function resolveStoreCode(location: string): Promise<StoreInfo | null> {
   return new Promise((resolve) => {
     const url = `https://apisiterac.unidas.com.br/api/v3/stores/details?keyWord=${encodeURIComponent(location)}&storeType=0`;
-    https.get(url, { headers: { 'Accept': 'application/json' } }, (res) => {
+    https.get(url, { headers: { Accept: 'application/json' } }, (res) => {
       let body = '';
-      res.on('data', (c) => body += c);
+      res.on('data', (c) => (body += c));
       res.on('end', () => {
         try {
-          const d = JSON.parse(body);
-          resolve(d?.data?.[0]?.storeCode || null);
-        } catch { resolve(null); }
+          const d = JSON.parse(body) as { data?: Array<{ storeCode: string; name?: string }> };
+          const first = d?.data?.[0];
+          if (!first?.storeCode) { resolve(null); return; }
+          resolve({ code: first.storeCode, name: first.name ?? location });
+        } catch {
+          resolve(null);
+        }
       });
       res.on('error', () => resolve(null));
     }).on('error', () => resolve(null));
@@ -47,7 +59,13 @@ const FLEET: ScrapedOffer[] = [
 ];
 
 export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[]> {
-  const deepLink = buildDeepLink(params);
+  // Resolve store first — fast HTTP call, done before opening browser
+  const store = await resolveStoreCode(params.location);
+  if (store) {
+    console.log(`[UNIDAS] loja resolvida: ${store.name} (${store.code})`);
+  }
+
+  const deepLink = buildDeepLink(params, store?.code);
   const context = await newContext();
 
   try {
@@ -79,12 +97,14 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
       await page.goto('https://www.unidas.com.br/', { waitUntil: 'domcontentloaded', timeout: 15000 });
     } catch { /* timeout */ }
 
-    // Try filling the search form — Unidas uses Angular Material (placeholder="Loja de retirada")
+    // Use resolved store name for more precise autocomplete match
+    const searchTerm = store?.name ?? params.location;
+
     try {
       const storeInput = await page.waitForSelector('input[placeholder="Loja de retirada"]', { timeout: 12000 });
       if (storeInput) {
         await storeInput.click();
-        await storeInput.type(params.location, { delay: 100 });
+        await storeInput.type(searchTerm, { delay: 100 });
         await page.waitForTimeout(2500);
         const option = await page.$('mat-option, [role="option"]');
         if (option) await option.click();
@@ -100,18 +120,18 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
       return captured;
     }
 
-    console.log(`[UNIDAS] ✗ sem dados reais — usando frota de referência`);
+    console.log(`[UNIDAS] ✗ sem dados reais — usando frota de referência${store ? ` (loja: ${store.code})` : ''}`);
   } catch (err) {
     console.error(`[UNIDAS] erro: ${err instanceof Error ? err.message : err}`);
   } finally {
     await context.close();
   }
 
-  return FLEET.map(o => ({ ...o, deepLink }));
+  return FLEET.map((o) => ({ ...o, deepLink }));
 }
 
 if (require.main === module) {
   scrapeUnidas({ location: 'São Paulo', startDate: '2026-06-01', endDate: '2026-06-05' })
-    .then(r => console.log(`Unidas: ${r.length} ofertas\n`, r.slice(0, 2)))
+    .then((r) => console.log(`Unidas: ${r.length} ofertas\n`, r.slice(0, 2)))
     .catch(console.error);
 }

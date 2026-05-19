@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { MapPin, Calendar, Check, ShieldCheck, Lock, ArrowRight, Activity, Zap, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
+import { searchSchema } from './schemas/search';
 import './App.css';
 
 function App() {
@@ -14,11 +15,17 @@ function App() {
   const [searchError, setSearchError] = useState('');
 
   function handleSearch() {
-    if (!location.trim()) { setSearchError('Informe a cidade ou aeroporto'); return; }
-    if (!startDate || !endDate) { setSearchError('Selecione as datas de retirada e devolução'); return; }
-    if (endDate < startDate) { setSearchError('A data de devolução deve ser após a retirada'); return; }
+    const result = searchSchema.safeParse({ location, startDate, endDate });
+    if (!result.success) {
+      const errs = result.error.flatten().fieldErrors;
+      const formErrs = result.error.flatten().formErrors;
+      setSearchError(
+        errs.location?.[0] ?? errs.startDate?.[0] ?? errs.endDate?.[0] ?? formErrs[0] ?? 'Verifique os campos'
+      );
+      return;
+    }
     setSearchError('');
-    const params = new URLSearchParams({ location, startDate, endDate });
+    const params = new URLSearchParams(result.data);
     navigate(`/search?${params}`);
   }
 

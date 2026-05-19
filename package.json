@@ -1,0 +1,21 @@
+{
+  "name": "locfly",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev": "npm run dev:api & npm run dev:web",
+    "build": "npm run build --workspaces --if-present",
+    "db:migrate": "npm run db:migrate --workspace=packages/database",
+    "db:studio": "npm run db:studio --workspace=packages/database",
+    "db:generate": "npm run db:generate --workspace=packages/database"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,9 +1,12 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { prisma } from '../db';
+import { logger } from '../logger';
+import { redisConnection } from '../queue/connection';
 import { runAllScrapers } from '../../../../packages/scrapers/src/index';
 
 const router = Router();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
+const REDIS_TTL_S = 600; // 10 min
 
 router.get('/', async (req: Request, res: Response) => {
   const { location, startDate, endDate, category, provider, maxPrice } = req.query;
@@ -16,15 +19,29 @@ router.get('/', async (req: Request, res: Response) => {
     const end = new Date(endDate as string);
 
     if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-      // Checa cache
+      const cacheKey = `search:${location as string}:${startDate as string}:${endDate as string}`;
+
+      // 1. Verificar Redis (cache primário)
+      try {
+        const redisHit = await redisConnection.get(cacheKey);
+        if (redisHit) {
+          logger.info({ cacheKey }, 'cache hit (Redis)');
+          const allOffers = JSON.parse(redisHit) as Record<string, unknown>[];
+          const filtered = applyFilters(allOffers, { category, provider, maxPrice });
+          return res.json({ results: filtered, cached: true });
+        }
+      } catch (redisErr) {
+        logger.warn({ err: redisErr }, 'Redis indisponível, prosseguindo sem cache');
+      }
+
+      // 2. Verificar Prisma (cache secundário / histórico)
       const cached = await prisma.searchCache.findFirst({
         where: { location: location as string, startDate: start, endDate: end },
       });
-
       const cacheValid = cached && (Date.now() - cached.updatedAt.getTime()) < CACHE_TTL_MS;
 
       if (!cacheValid) {
-        // Roda scrapers e persiste os resultados
+        // 3. Rodar scrapers
         try {
           const scraped = await runAllScrapers({
             location: location as string,
@@ -33,13 +50,12 @@ router.get('/', async (req: Request, res: Response) => {
           });
 
           if (scraped.length > 0) {
-            // Limpa ofertas antigas e insere as novas
             await prisma.carOffer.deleteMany({});
             await prisma.carOffer.createMany({
               data: scraped.map(o => ({
-                provider: o.provider as any,
+                provider: o.provider as never,
                 model: o.model,
-                category: o.category as any,
+                category: o.category as never,
                 price: o.price,
                 transmission: o.transmission,
                 hasAC: o.hasAC,
@@ -52,11 +68,12 @@ router.get('/', async (req: Request, res: Response) => {
             usedScrapers = true;
           }
         } catch (err) {
-          console.error('[search] Scrapers falharam:', err);
+          logger.error({ err }, '[search] scrapers falharam');
         }
 
-        // Salva cache
+        // 4. Salvar no Prisma e no Redis
         const freshOffers = await prisma.carOffer.findMany({ orderBy: { price: 'asc' } });
+
         await prisma.searchCache.upsert({
           where: { id: `${location}-${startDate}-${endDate}` },
           create: {
@@ -64,26 +81,41 @@ router.get('/', async (req: Request, res: Response) => {
             location: location as string,
             startDate: start,
             endDate: end,
-            results: freshOffers as any,
+            results: freshOffers as never,
           },
-          update: { results: freshOffers as any },
+          update: { results: freshOffers as never },
         });
+
+        try {
+          await redisConnection.set(cacheKey, JSON.stringify(freshOffers), 'EX', REDIS_TTL_S);
+          logger.info({ cacheKey }, 'cache salvo (Redis)');
+        } catch (redisErr) {
+          logger.warn({ err: redisErr }, 'Redis: falha ao salvar cache');
+        }
       }
     }
   }
 
-  // Filtros aplicados após scraping
+  // Filtros via Prisma
   const where: Record<string, unknown> = {};
   if (category) where.category = category;
   if (provider) where.provider = provider;
   if (maxPrice) where.price = { lte: parseFloat(maxPrice as string) };
 
-  const offers = await prisma.carOffer.findMany({
-    where,
-    orderBy: { price: 'asc' },
-  });
-
-  res.json({ results: offers, cached: !usedScrapers && !hasSearchParams });
+  const offers = await prisma.carOffer.findMany({ where, orderBy: { price: 'asc' } });
+  return res.json({ results: offers, cached: !usedScrapers && !hasSearchParams });
 });
+
+function applyFilters(
+  offers: Record<string, unknown>[],
+  filters: { category?: unknown; provider?: unknown; maxPrice?: unknown },
+) {
+  return offers.filter(o => {
+    if (filters.category && o['category'] !== filters.category) return false;
+    if (filters.provider && o['provider'] !== filters.provider) return false;
+    if (filters.maxPrice && Number(o['price']) > parseFloat(filters.maxPrice as string)) return false;
+    return true;
+  });
+}
 
 export default router;
