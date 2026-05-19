@@ -1,6 +1,6 @@
-import https from 'https';
 import { ScraperParams, ScrapedOffer } from '../types';
 import { newContext, findVehicleArray, rawToOffer } from '../browser';
+import { fetchLocalizaGrupos } from '../crawlers/localiza-api';
 
 function buildDeepLink(params: ScraperParams): string {
   return `https://www.localiza.com/brasil/pt-br/aluguel-de-carros?pickupLocationSearch=${encodeURIComponent(params.location)}&startDate=${params.startDate}&endDate=${params.endDate}`;
@@ -16,97 +16,7 @@ function mapCategory(g: string): ScrapedOffer['category'] {
   return 'ECONOMICO';
 }
 
-function descricaoToCategory(descricao: string): ScrapedOffer['category'] {
-  const s = descricao.toUpperCase();
-  if (/COMPAC|ECON/.test(s)) return 'ECONOMICO';
-  if (/INTER/.test(s)) return 'INTERMEDIARIO';
-  if (/SUV|7 LUGAR/.test(s)) return 'SUV';
-  if (/EXEC|LUX|PRIM|HÍBRID/.test(s)) return 'LUXO';
-  return 'ECONOMICO';
-}
 
-function descricaoToPrice(descricao: string): number {
-  const s = descricao.toUpperCase();
-  if (/PRIME/.test(s)) return 490;
-  if (/BLINDAD/.test(s)) return 450;
-  if (/HÍBRID|HYBRIDO/.test(s)) return 390;
-  if (/SUV.*ESPECIAL|ESPECIAL.*SUV|7 LUGAR/.test(s)) return 329.90;
-  if (/SUV/.test(s)) return 289.90;
-  if (/EXEC.*AUTO|AUTO.*EXEC/.test(s)) return 279.90;
-  if (/EXEC/.test(s)) return 249.90;
-  if (/INTER.*AUTO|AUTO.*INTER/.test(s)) return 154.90;
-  if (/INTER/.test(s)) return 134.90;
-  if (/ECON.*ESPECIAL|ESPECIAL.*ECON/.test(s)) return 109.90;
-  if (/ECON.*SEDAN|SEDAN.*ECON/.test(s)) return 104.90;
-  if (/ECON.*HATCH|HATCH.*ECON/.test(s)) return 97.90;
-  if (/ECON/.test(s)) return 94.90;
-  if (/COMPAC/.test(s)) return 89.90;
-  return 99.90;
-}
-
-function descricaoToTransmission(descricao: string): 'Manual' | 'Automático' {
-  const s = descricao.toUpperCase();
-  if (/AUTO|AT|TURBO/.test(s)) return 'Automático';
-  return 'Manual';
-}
-
-function extractModelFromDescricao(descricaoVeiculoPadrao: string): string {
-  const match = descricaoVeiculoPadrao.match(/similar a:\s*([^,]+)/i);
-  if (match) {
-    const first = match[1].trim();
-    return first.replace(/\s+\d+\.\d+.*$/, '').trim() + ' ou Similar';
-  }
-  return descricaoVeiculoPadrao.slice(0, 40);
-}
-
-// Fetches real Localiza vehicle groups from the public API
-async function fetchGruposCarros(): Promise<ScrapedOffer[]> {
-  return new Promise((resolve) => {
-    const url = 'https://canaisdigitais-api.localiza.com/sitelocaliza-api-netcore/v1/GruposCarros/Brasil/resumo?ota=false';
-    https.get(url, { headers: { 'Accept': 'application/json' } }, (res) => {
-      let body = '';
-      res.on('data', (chunk) => body += chunk);
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          const grupos: Array<{ codigo: string; descricao: string; descricaoVeiculoPadrao: string; urlImagem: string; ehFast: boolean }> = data.grupos || [];
-
-          // Filter out FAST variants, BLINDADO, PRIME (keep standard fleet)
-          const standard = grupos.filter(g =>
-            !g.ehFast &&
-            !/BLINDADO|PRIME|HÍBRIDO|HYBRIDO/i.test(g.descricao)
-          );
-
-          const offers: ScrapedOffer[] = standard.map(g => ({
-            provider: 'LOCALIZA' as const,
-            model: extractModelFromDescricao(g.descricaoVeiculoPadrao),
-            category: descricaoToCategory(g.descricao),
-            price: descricaoToPrice(g.descricao),
-            transmission: descricaoToTransmission(g.descricao),
-            hasAC: true,
-            seats: g.descricao.toUpperCase().includes('7 LUGAR') ? 7 : 5,
-            deepLink: '',
-            imageUrl: g.urlImagem,
-          }));
-
-          // Deduplicate by category+price (keep variety)
-          const seen = new Set<string>();
-          const unique = offers.filter(o => {
-            const key = `${o.category}-${o.price}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-
-          resolve(unique);
-        } catch {
-          resolve([]);
-        }
-      });
-      res.on('error', () => resolve([]));
-    }).on('error', () => resolve([]));
-  });
-}
 
 export async function scrapeLocaliza(params: ScraperParams): Promise<ScrapedOffer[]> {
   const deepLink = buildDeepLink(params);
@@ -174,8 +84,8 @@ export async function scrapeLocaliza(params: ScraperParams): Promise<ScrapedOffe
     await context.close();
   }
 
-  // Fallback: real vehicle groups from Localiza's public API (models + images are real, prices estimated)
-  const gruposFleet = await fetchGruposCarros();
+  // Fallback: real vehicle groups from Localiza's public API via Crawlee HttpCrawler
+  const gruposFleet = await fetchLocalizaGrupos();
   if (gruposFleet.length > 0) {
     console.log(`[LOCALIZA] ✓ ${gruposFleet.length} grupos reais via API pública (preços estimados)`);
     return gruposFleet.map(o => ({ ...o, deepLink }));
