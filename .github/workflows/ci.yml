@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  typecheck-and-lint:
+    name: Typecheck & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=packages/database/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+      - name: Typecheck API
+        run: npx tsc --noEmit --project apps/api/tsconfig.json
+
+      - name: Typecheck Web
+        run: npx tsc --noEmit --project apps/web/tsconfig.app.json
+
+      - name: Typecheck Scrapers
+        run: npx tsc --noEmit --project packages/scrapers/tsconfig.json
+
+      - name: Lint Web
+        run: npm run lint --workspace=apps/web
