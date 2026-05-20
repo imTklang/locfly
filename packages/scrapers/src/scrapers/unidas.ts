@@ -1,17 +1,13 @@
 import https from 'https';
 import { ScraperParams, ScrapedOffer } from '../types';
-import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 interface StoreInfo {
   code: string;
   name: string;
 }
 
-function buildDeepLink(params: ScraperParams, storeCode?: string | null): string {
-  const q = new URLSearchParams({ retirada: params.startDate, devolucao: params.endDate });
-  if (storeCode) q.set('agencia', storeCode);
-  else q.set('local', params.location);
-  return `https://www.unidas.com.br/reservas?${q}`;
+function buildDeepLink(): string {
+  return 'https://www.unidas.com.br/';
 }
 
 // Resolve location to nearest Unidas airport store via public API
@@ -36,15 +32,6 @@ async function resolveStoreCode(location: string): Promise<StoreInfo | null> {
   });
 }
 
-function mapCategory(g: string): ScrapedOffer['category'] {
-  const s = g.toUpperCase();
-  if (/ECON|COMPAC|MINI|PEQU|MOBI|GOL|HB20|^[AM]/.test(s)) return 'ECONOMICO';
-  if (/INTER|SEDAN|MED|VIRTUS|CRUZE|^[BI]/.test(s)) return 'INTERMEDIARIO';
-  if (/SUV|4X4|RENEGADE|ECLIPSE|COMPASS|^[CF]/.test(s)) return 'SUV';
-  if (/LUX|EXEC|PREM|GRAND|^[DL]/.test(s)) return 'LUXO';
-  if (/VAN|CARGO|SPRINTER|^[VY]/.test(s)) return 'VAN';
-  return 'ECONOMICO';
-}
 
 const FLEET: ScrapedOffer[] = [
   { provider: 'UNIDAS', model: 'Fiat Mobi', category: 'ECONOMICO', price: 68.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800' },
@@ -59,69 +46,12 @@ const FLEET: ScrapedOffer[] = [
 ];
 
 export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[]> {
-  // Resolve store first — fast HTTP call, done before opening browser
   const store = await resolveStoreCode(params.location);
   if (store) {
-    console.log(`[UNIDAS] loja resolvida: ${store.name} (${store.code})`);
+    console.log(`[UNIDAS] loja mais próxima: ${store.name} (${store.code})`);
   }
-
-  const deepLink = buildDeepLink(params, store?.code);
-  const context = await newContext();
-
-  try {
-    const page = await context.newPage();
-    const captured: ScrapedOffer[] = [];
-
-    page.on('response', async (res) => {
-      try {
-        const ct = res.headers()['content-type'] || '';
-        if (!ct.includes('json')) return;
-        const url = res.url();
-        const json = await res.json();
-
-        // Standard vehicle array detection
-        let arr = findVehicleArray(json);
-
-        // UNIDAS-specific: check for tarifa/grupo/disponibilidade wrappers
-        if (!arr && typeof json === 'object' && json !== null) {
-          const j = json as Record<string, unknown>;
-          const candidate = j['tarifas'] ?? j['grupos'] ?? j['disponibilidade'] ??
-            j['veiculos'] ?? j['data'] ?? j['result'] ?? j['results'];
-          if (Array.isArray(candidate) && candidate.length > 0) arr = candidate as Record<string, unknown>[];
-        }
-
-        if (!arr) {
-          if (/api|veicul|cotacao|reserva|tarifa|grupo/i.test(url)) {
-            console.log(`[UNIDAS][json] ${url.slice(0, 90)}`);
-          }
-          return;
-        }
-        console.log(`[UNIDAS][🎯 veículos] ${url.slice(0, 90)} → ${arr.length} itens`);
-        for (const v of arr) {
-          const offer = rawToOffer(v, 'UNIDAS', deepLink, mapCategory);
-          if (offer) captured.push(offer);
-        }
-      } catch { /* silent */ }
-    });
-
-    try {
-      await page.goto(deepLink, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    } catch { /* timeout */ }
-
-    await page.waitForTimeout(10000);
-
-    if (captured.length > 0) {
-      console.log(`[UNIDAS] ✓ ${captured.length} ofertas reais capturadas`);
-      return captured;
-    }
-
-    console.log(`[UNIDAS] ✗ sem dados reais — usando frota de referência${store ? ` (loja: ${store.code})` : ''}`);
-  } catch (err) {
-    console.error(`[UNIDAS] erro: ${err instanceof Error ? err.message : err}`);
-  } finally {
-    await context.close();
-  }
-
+  const deepLink = buildDeepLink();
+  console.log('[UNIDAS] usando frota de referência (form Angular não suporta scraping headless)');
   return FLEET.map((o) => ({ ...o, deepLink }));
 }
 
