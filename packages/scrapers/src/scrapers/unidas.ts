@@ -78,9 +78,20 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
         if (!ct.includes('json')) return;
         const url = res.url();
         const json = await res.json();
-        const arr = findVehicleArray(json);
+
+        // Standard vehicle array detection
+        let arr = findVehicleArray(json);
+
+        // UNIDAS-specific: check for tarifa/grupo/disponibilidade wrappers
+        if (!arr && typeof json === 'object' && json !== null) {
+          const j = json as Record<string, unknown>;
+          const candidate = j['tarifas'] ?? j['grupos'] ?? j['disponibilidade'] ??
+            j['veiculos'] ?? j['data'] ?? j['result'] ?? j['results'];
+          if (Array.isArray(candidate) && candidate.length > 0) arr = candidate as Record<string, unknown>[];
+        }
+
         if (!arr) {
-          if (/api|veicul|cotacao|reserva/i.test(url)) {
+          if (/api|veicul|cotacao|reserva|tarifa|grupo/i.test(url)) {
             console.log(`[UNIDAS][json] ${url.slice(0, 90)}`);
           }
           return;
@@ -104,14 +115,22 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
       const storeInput = await page.waitForSelector('input[placeholder="Loja de retirada"]', { timeout: 12000 });
       if (storeInput) {
         await storeInput.click();
-        await storeInput.type(searchTerm, { delay: 100 });
+        // Clear any existing value before typing
+        await storeInput.fill('');
+        await storeInput.type(searchTerm, { delay: 80 });
         await page.waitForTimeout(2500);
         const option = await page.$('mat-option, [role="option"]');
-        if (option) await option.click();
-        else { await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); }
+        if (option) {
+          await option.click();
+        } else {
+          await page.keyboard.press('ArrowDown');
+          await page.waitForTimeout(300);
+          await page.keyboard.press('Enter');
+        }
         await page.waitForTimeout(2000);
         await page.click('button[type="submit"], button:has-text("Buscar"), button:has-text("Pesquisar")').catch(() => {});
-        await page.waitForTimeout(6000);
+        // Increased from 6s to 8s to allow Angular SSR to render results
+        await page.waitForTimeout(8000);
       }
     } catch { /* form interaction failed */ }
 
