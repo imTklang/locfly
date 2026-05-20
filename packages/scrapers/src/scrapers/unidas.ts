@@ -105,34 +105,10 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
     });
 
     try {
-      await page.goto('https://www.unidas.com.br/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.goto(deepLink, { waitUntil: 'domcontentloaded', timeout: 15000 });
     } catch { /* timeout */ }
 
-    // Use resolved store name for more precise autocomplete match
-    const searchTerm = store?.name ?? params.location;
-
-    try {
-      const storeInput = await page.waitForSelector('input[placeholder="Loja de retirada"]', { timeout: 12000 });
-      if (storeInput) {
-        await storeInput.click();
-        // Clear any existing value before typing
-        await storeInput.fill('');
-        await storeInput.type(searchTerm, { delay: 80 });
-        await page.waitForTimeout(2500);
-        const option = await page.$('mat-option, [role="option"]');
-        if (option) {
-          await option.click();
-        } else {
-          await page.keyboard.press('ArrowDown');
-          await page.waitForTimeout(300);
-          await page.keyboard.press('Enter');
-        }
-        await page.waitForTimeout(2000);
-        await page.click('button[type="submit"], button:has-text("Buscar"), button:has-text("Pesquisar")').catch(() => {});
-        // Increased from 6s to 8s to allow Angular SSR to render results
-        await page.waitForTimeout(8000);
-      }
-    } catch { /* form interaction failed */ }
+    await page.waitForTimeout(10000);
 
     if (captured.length > 0) {
       console.log(`[UNIDAS] ✓ ${captured.length} ofertas reais capturadas`);

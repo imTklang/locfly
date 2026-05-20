@@ -47,30 +47,11 @@ export async function scrapeLocaliza(params: ScraperParams): Promise<ScrapedOffe
       } catch { /* silent */ }
     });
 
-    // Correct URL: brasil/pt-br (not brazil/pt-br)
     try {
-      await page.goto('https://www.localiza.com/brasil/pt-br', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.goto(deepLink, { waitUntil: 'domcontentloaded', timeout: 15000 });
     } catch { /* timeout */ }
 
-    await page.waitForTimeout(2000);
-
-    // Try Angular Material form (mat-mdc-input-element, no placeholder attr)
-    if (captured.length === 0) {
-      try {
-        const inputs = await page.$$('input.mat-mdc-input-element:not(.mat-datepicker-input)');
-        if (inputs.length > 0) {
-          await inputs[0].click();
-          await inputs[0].type(params.location, { delay: 100 });
-          await page.waitForTimeout(2500);
-          const option = await page.$('mat-option, [role="option"]');
-          if (option) await option.click();
-          else { await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); }
-          await page.waitForTimeout(1500);
-        }
-        await page.click('button[type="submit"], button:has-text("Buscar"), button:has-text("Pesquisar")').catch(() => {});
-        await page.waitForTimeout(6000);
-      } catch { /* form não disponível */ }
-    }
+    await page.waitForTimeout(8000);
 
     if (captured.length > 0) {
       console.log(`[LOCALIZA] ✓ ${captured.length} ofertas reais capturadas`);
