@@ -1,210 +1,173 @@
-import https from 'https';
-import * as cheerio from 'cheerio';
 import { ScraperParams, ScrapedOffer } from '../types';
-import { newContext, findVehicleArray, rawToOffer } from '../browser';
+import { newContext } from '../browser';
 
-function buildDeepLink(params: ScraperParams): string {
-  const q = new URLSearchParams({
-    origem: params.location,
-    retirada: params.startDate,
-    devolucao: params.endDate,
-  });
-  return `https://reservas.aluguefoco.com.br/?${q}`;
+// Store codes from reservas.aluguefoco.com.br/api/depots (depotsOptions value field)
+const FOCO_CODES: Record<string, string> = {
+  'guarulhos': 'SAO10',
+  'são paulo': 'SAO10',
+  'sao paulo': 'SAO10',
+  'congonhas': 'SAO11',
+  'cgh': 'SAO11',
+  'gru': 'SAO10',
+  'campinas': 'VCP10',
+  'rio de janeiro': 'GIG10',
+  'galeão': 'GIG10',
+  'galeao': 'GIG10',
+  'santos dumont': 'SDU10',
+  'sdu': 'SDU10',
+  'brasília': 'NAT10',
+  'brasilia': 'NAT10',
+  'salvador': 'SSA10',
+  'fortaleza': 'FOR10',
+  'recife': 'REC20',
+  'belo horizonte': 'CNF10',
+  'confins': 'CNF10',
+  'curitiba': 'CWB10',
+  'porto alegre': 'POA10',
+  'florianópolis': 'FLN10',
+  'florianopolis': 'FLN10',
+  'goiânia': 'GYN10',
+  'goiania': 'GYN10',
+  'natal': 'NAT10',
+  'maceió': 'MCZ10',
+  'maceio': 'MCZ10',
+  'joão pessoa': 'JPA10',
+  'joao pessoa': 'JPA10',
+  'aracaju': 'AJU10',
+  'porto seguro': 'BPS10',
+  'vitória': 'VIX10',
+  'vitoria': 'VIX10',
+  'campo grande': 'CGR10',
+  'navegantes': 'NVT10',
+  'ribeirão preto': 'RAO10',
+  'ribeirao preto': 'RAO10',
+};
+
+function resolveStoreCode(location: string): string {
+  const key = location.toLowerCase().trim();
+  if (FOCO_CODES[key]) return FOCO_CODES[key];
+  for (const [name, code] of Object.entries(FOCO_CODES)) {
+    if (key.includes(name) || name.includes(key)) return code;
+  }
+  return 'SAO10'; // fallback: Guarulhos
 }
 
-function mapCategory(s: string): ScrapedOffer['category'] {
-  const c = s.toUpperCase();
-  if (/ECON|COMPAC|MINI|MOBI|HB20|SANDERO|KWID|ARGO/.test(c)) return 'ECONOMICO';
-  if (/INTER|SEDAN|CRUZE|ETIOS|ONIX PLUS|VIRTUS/.test(c)) return 'INTERMEDIARIO';
-  if (/SUV|CROSS|TRACKER|T-CROSS|CRETA|COMPASS|RENEGADE/.test(c)) return 'SUV';
-  if (/LUX|EXEC|LEXUS|BMW|AUDI|MERCEDES/.test(c)) return 'LUXO';
-  if (/VAN|HIACE|DUCATO|MASTER|SPRINTER/.test(c)) return 'VAN';
+function buildVeiculosUrl(storeCode: string, startDate: string, endDate: string): string {
+  return `https://reservas.aluguefoco.com.br/veiculos?pickup_store=${storeCode}&pickup_date=${startDate}&pickup_time=12%3A00&return_store=SAME&return_date=${endDate}&return_time=12%3A00`;
+}
+
+function buildDeepLink(storeCode: string, startDate: string, endDate: string): string {
+  return `https://reservas.aluguefoco.com.br/?pickup_store=${storeCode}&pickup_date=${startDate}&return_date=${endDate}`;
+}
+
+function mapGroupToCategory(group: string): ScrapedOffer['category'] {
+  const g = group.toUpperCase();
+  if (/ECON|COMPAC|MINI|BÁSICO|BASICO|GRUPO B|GRUPO C|GRUPO D/.test(g)) return 'ECONOMICO';
+  if (/SEDAN|INTERMEDIÁRIO|INTERMEDIARIO|GRUPO F|GRUPO H/.test(g)) return 'INTERMEDIARIO';
+  if (/SUV|4X4|GRUPO J/.test(g)) return 'SUV';
+  if (/LUX|EXEC|PREM|GRUPO L|GRUPO P/.test(g)) return 'LUXO';
+  if (/VAN|MINIVAN|GRUPO I/.test(g)) return 'VAN';
   return 'ECONOMICO';
 }
 
-// Fetches real fleet from Foco's /frota page via Cheerio HTML parsing
-async function fetchFocaFrota(deepLink: string): Promise<ScrapedOffer[]> {
-  return new Promise((resolve) => {
-    const url = 'https://www.aluguefoco.com.br/frota';
-    https.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,*/*',
-        'Accept-Language': 'pt-BR,pt;q=0.9',
-      },
-    }, (res) => {
-      let body = '';
-      res.on('data', (c) => (body += c));
-      res.on('end', () => {
-        try {
-          const $ = cheerio.load(body);
-          const offers: ScrapedOffer[] = [];
+function parseVehiclesFromText(text: string, deepLink: string): ScrapedOffer[] {
+  const offers: ScrapedOffer[] = [];
+  // Split by "CONTINUAR" — each vehicle card ends with this button
+  const chunks = text.split('CONTINUAR').filter(c => c.includes('Grupo') && c.includes('R$'));
 
-          // Try multiple selector strategies for different page structures
-          const selectors = [
-            '.vehicle-card, .car-card, .frota-card, .veiculo-card',
-            '[class*="vehicle"], [class*="carro"], [class*="veiculo"], [class*="frota"]',
-            'article, .card, .item',
-          ];
+  for (const chunk of chunks) {
+    const lines = chunk.trim().split('\n').map(l => l.trim()).filter(Boolean);
+    const groupLine = lines.find(l => l.startsWith('Grupo'));
+    if (!groupLine) continue;
 
-          for (const sel of selectors) {
-            $(sel).each((_i, el) => {
-              const model = $(el)
-                .find('h2, h3, h4, .title, .nome, [class*="title"], [class*="nome"], [class*="model"]')
-                .first().text().trim();
-              const priceText = $(el)
-                .find('.preco, .price, .valor, [class*="price"], [class*="preco"], [class*="valor"]')
-                .first().text().trim();
-              const price = parseFloat(priceText.replace(/[^0-9,.]/g, '').replace(',', '.'));
-              const imgSrc = $(el).find('img').first().attr('src') ?? '';
+    const groupIdx = lines.indexOf(groupLine);
+    const model = lines[groupIdx + 1]?.replace(/ ou similar$/i, '').trim() ?? '';
+    if (!model) continue;
 
-              if (model && model.length > 3 && price > 0) {
-                offers.push({
-                  provider: 'FOCO',
-                  model,
-                  category: mapCategory(model),
-                  price,
-                  transmission: /auto|cvt/i.test($(el).text()) ? 'Automático' : 'Manual',
-                  hasAC: true,
-                  seats: /van|hiace|master/i.test(model) ? 12 : 5,
-                  deepLink,
-                  imageUrl: imgSrc.startsWith('http') ? imgSrc : undefined,
-                });
-              }
-            });
-            if (offers.length > 0) break;
-          }
+    const priceLine = lines.find(l => l.includes('Por: R$'));
+    if (!priceLine) continue;
 
-          // Also try JSON-LD structured data on the page
-          if (offers.length === 0) {
-            $('script[type="application/ld+json"]').each((_i, el) => {
-              try {
-                const data = JSON.parse($(el).html() ?? '');
-                const items = Array.isArray(data) ? data : [data];
-                for (const item of items) {
-                  if (item?.name && item?.offers?.price) {
-                    offers.push({
-                      provider: 'FOCO',
-                      model: item.name,
-                      category: mapCategory(item.name),
-                      price: parseFloat(item.offers.price),
-                      transmission: 'Manual',
-                      hasAC: true,
-                      seats: 5,
-                      deepLink,
-                      imageUrl: item.image,
-                    });
-                  }
-                }
-              } catch { /* silent */ }
-            });
-          }
+    const priceMatch = priceLine.match(/Por: R\$\s*([\d.,]+)/);
+    if (!priceMatch) continue;
+    const price = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+    if (price <= 0) continue;
 
-          resolve(offers);
-        } catch {
-          resolve([]);
-        }
-      });
-      res.on('error', () => resolve([]));
-    }).on('error', () => resolve([]));
-  });
+    const seatsLine = lines.find(l => /\d+ Passageiro/.test(l));
+    const seats = seatsLine ? parseInt(seatsLine) : 5;
+    const hasAC = lines.some(l => l.includes('Ar Condicionado'));
+    const isAuto = groupLine.includes('Automático') || lines.some(l => l === 'Automático');
+
+    offers.push({
+      provider: 'FOCO',
+      model,
+      category: mapGroupToCategory(groupLine),
+      price,
+      transmission: isAuto ? 'Automático' : 'Manual',
+      hasAC,
+      seats,
+      deepLink,
+    });
+  }
+
+  return offers;
 }
 
 const FLEET: ScrapedOffer[] = [
-  { provider: 'FOCO', model: 'Fiat Mobi', category: 'ECONOMICO', price: 65.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800' },
-  { provider: 'FOCO', model: 'Hyundai HB20', category: 'ECONOMICO', price: 78.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=800' },
-  { provider: 'FOCO', model: 'Renault Sandero', category: 'ECONOMICO', price: 74.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=800' },
-  { provider: 'FOCO', model: 'Chevrolet Cruze', category: 'INTERMEDIARIO', price: 138.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1551830820-330a71b99659?w=800' },
-  { provider: 'FOCO', model: 'Toyota Etios Sedan', category: 'INTERMEDIARIO', price: 119.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1580273916550-e323be2ae537?w=800' },
-  { provider: 'FOCO', model: 'Volkswagen T-Cross', category: 'SUV', price: 234.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1609521263047-f8f205293f24?w=800' },
-  { provider: 'FOCO', model: 'Chevrolet Tracker', category: 'SUV', price: 249.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=800' },
-  { provider: 'FOCO', model: 'Lexus ES 300h', category: 'LUXO', price: 510.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800' },
-  { provider: 'FOCO', model: 'Toyota Hiace', category: 'VAN', price: 395.00, transmission: 'Automático', hasAC: true, seats: 12, deepLink: '', imageUrl: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=800' },
+  { provider: 'FOCO', model: 'Fiat Mobi ou Similar', category: 'ECONOMICO', price: 119.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Peugeot 208 ou Similar', category: 'ECONOMICO', price: 128.60, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'VW Polo ou Similar', category: 'ECONOMICO', price: 128.70, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'HB20S ou Similar', category: 'INTERMEDIARIO', price: 133.30, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'VW Virtus ou Similar', category: 'INTERMEDIARIO', price: 174.80, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Renault Kardian ou Similar', category: 'SUV', price: 174.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'VW T-Cross ou Similar', category: 'SUV', price: 190.50, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Chevrolet Spin ou Similar', category: 'VAN', price: 379.70, transmission: 'Automático', hasAC: true, seats: 7, deepLink: '' },
 ];
 
 export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]> {
-  const deepLink = buildDeepLink(params);
-  const context = await newContext();
+  const storeCode = resolveStoreCode(params.location);
+  const deepLink = buildDeepLink(storeCode, params.startDate, params.endDate);
+  const veiculosUrl = buildVeiculosUrl(storeCode, params.startDate, params.endDate);
 
+  console.log(`[FOCO] loja: ${storeCode} para "${params.location}"`);
+
+  const context = await newContext();
   try {
     const page = await context.newPage();
-    const captured: ScrapedOffer[] = [];
 
-    page.on('response', async (res) => {
-      try {
-        const ct = res.headers()['content-type'] || '';
-        if (!ct.includes('json')) return;
-        const url = res.url();
-        const json = await res.json();
-        const arr = findVehicleArray(json);
-        if (!arr) {
-          if (/api|veicul|frota|carro/i.test(url)) {
-            console.log(`[FOCO][json] ${url.slice(0, 90)}`);
-          }
-          return;
-        }
-        console.log(`[FOCO][🎯 veículos] ${url.slice(0, 90)} → ${arr.length} itens`);
-        for (const v of arr) {
-          const offer = rawToOffer(v, 'FOCO', deepLink, mapCategory);
-          if (offer) captured.push(offer);
-        }
-      } catch { /* silent */ }
-    });
-
+    // Estabelecer sessão na homepage antes de navegar para veículos
     try {
-      await page.goto('https://www.aluguefoco.com.br/', { waitUntil: 'domcontentloaded', timeout: 12000 });
+      await page.goto('https://reservas.aluguefoco.com.br/', { waitUntil: 'domcontentloaded', timeout: 12000 });
     } catch { /* timeout */ }
+    await page.waitForTimeout(1500);
 
-    await page.waitForTimeout(2000);
+    // Navegar direto para a página de veículos com params da busca
+    try {
+      await page.goto(veiculosUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    } catch { /* timeout */ }
+    await page.waitForTimeout(8000);
 
-    // Try Cheerio on Playwright-loaded DOM
-    if (captured.length === 0) {
-      const html = await page.content();
-      const $ = cheerio.load(html);
-      $('.vehicle-card, .car-card, .veiculo-card, [class*="vehicle"], [class*="veiculo"]').each((_i, el) => {
-        const model = $(el).find('h2, h3, h4, .title, .nome').first().text().trim();
-        const priceText = $(el).find('.preco, .price, .valor, [class*="price"]').first().text().trim();
-        const price = parseFloat(priceText.replace(/[^0-9,.]/g, '').replace(',', '.'));
-        if (model && price > 0) {
-          captured.push({
-            provider: 'FOCO',
-            model,
-            category: mapCategory(model),
-            price,
-            transmission: 'Manual',
-            hasAC: true,
-            seats: 5,
-            deepLink,
-          });
-        }
-      });
+    const bodyText = await page.$eval('body', el => (el as HTMLElement).innerText).catch(() => '');
+
+    if (bodyText.includes('Por: R$') && bodyText.includes('Grupo')) {
+      const offers = parseVehiclesFromText(bodyText, deepLink);
+      if (offers.length > 0) {
+        console.log(`[FOCO] ✓ ${offers.length} ofertas reais (${storeCode})`);
+        return offers;
+      }
     }
 
-    if (captured.length > 0) {
-      console.log(`[FOCO] ✓ ${captured.length} ofertas capturadas via Playwright`);
-      return captured;
-    }
-
-    console.log(`[FOCO] ✗ Playwright sem dados — tentando HTTP + Cheerio na /frota...`);
+    console.log(`[FOCO] ✗ sem dados reais — usando frota de referência (${storeCode})`);
   } catch (err) {
     console.error(`[FOCO] erro: ${err instanceof Error ? err.message : err}`);
   } finally {
     await context.close();
   }
 
-  // Fallback: direct HTTP fetch of /frota page
-  const fromHttp = await fetchFocaFrota(deepLink);
-  if (fromHttp.length > 0) {
-    console.log(`[FOCO] ✓ ${fromHttp.length} ofertas via HTTP + Cheerio`);
-    return fromHttp;
-  }
-
-  console.log(`[FOCO] ✗ sem dados reais — usando frota de referência`);
-  return FLEET.map((o) => ({ ...o, deepLink }));
+  return FLEET.map(o => ({ ...o, deepLink }));
 }
 
 if (require.main === module) {
-  scrapeFoco({ location: 'São Paulo', startDate: '2026-06-01', endDate: '2026-06-05' })
-    .then((r) => console.log(`Foco: ${r.length} ofertas\n`, r.slice(0, 2)))
+  scrapeFoco({ location: 'São Paulo', startDate: '2026-07-01', endDate: '2026-07-05' })
+    .then(r => console.log(`Foco: ${r.length} ofertas\n`, r.slice(0, 3)))
     .catch(console.error);
 }
