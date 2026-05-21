@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Zap, Loader2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
