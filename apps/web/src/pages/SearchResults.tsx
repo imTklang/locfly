@@ -165,10 +165,6 @@ export default function SearchResults() {
     });
   }, [offers, filters]);
 
-  useEffect(() => {
-    if (token) fetchBookmarks();
-  }, [token]);
-
   async function fetchBookmarks() {
     try {
       const res = await fetch(`${API}/api/bookmarks`, { headers: { Authorization: `Bearer ${token}` } });
@@ -176,6 +172,10 @@ export default function SearchResults() {
       setBookmarked(new Set(data.map(c => c.id)));
     } catch { /* ignore */ }
   }
+
+  useEffect(() => {
+    if (token) fetchBookmarks();
+  }, [token]);
 
   async function toggleBookmark(id: string) {
     if (!token) { navigate('/login'); return; }
