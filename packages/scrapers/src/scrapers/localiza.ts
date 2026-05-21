@@ -51,7 +51,7 @@ export async function scrapeLocaliza(params: ScraperParams): Promise<ScrapedOffe
       await page.goto(deepLink, { waitUntil: 'domcontentloaded', timeout: 15000 });
     } catch { /* timeout */ }
 
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(12000);
 
     if (captured.length > 0) {
       console.log(`[LOCALIZA] ✓ ${captured.length} ofertas reais capturadas`);

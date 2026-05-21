@@ -1,24 +1,22 @@
-import { chromium as chromiumExtra } from 'playwright-extra';
-// @ts-ignore — sem tipagem completa no playwright-extra
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import type { Browser, BrowserContext } from 'playwright';
 import { ScrapedOffer } from './types';
-
-chromiumExtra.use(StealthPlugin());
 
 let _browser: Browser | null = null;
 
 export async function getBrowser(): Promise<Browser> {
   if (!_browser || !(_browser as Browser).isConnected()) {
-    _browser = await (chromiumExtra.launch({
+    // Use Function() to bypass TypeScript's compile-time import()→require() transformation.
+    // cloakbrowser is ESM-only; native dynamic import() works from CJS, but tsc compiles
+    // await import() to require() when module:"CommonJS", breaking ESM packages.
+    type CloakMod = { launch: (opts?: Record<string, unknown>) => Promise<Browser> };
+    const { launch } = await (new Function('return import("cloakbrowser")')() as Promise<CloakMod>);
+    _browser = await launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    }) as unknown as Promise<Browser>);
+      locale: 'pt-BR',
+      timezone: 'America/Sao_Paulo',
+      humanize: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
   }
   return _browser!;
 }
@@ -26,7 +24,6 @@ export async function getBrowser(): Promise<Browser> {
 export async function newContext(): Promise<BrowserContext> {
   const browser = await getBrowser();
   return browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
     viewport: { width: 1366, height: 768 },

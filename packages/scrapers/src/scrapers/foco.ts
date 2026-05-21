@@ -1,5 +1,5 @@
 import { ScraperParams, ScrapedOffer } from '../types';
-import { newContext } from '../browser';
+import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 // Store codes from reservas.aluguefoco.com.br/api/depots (depotsOptions value field)
 const FOCO_CODES: Record<string, string> = {
@@ -134,6 +134,26 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
   try {
     const page = await context.newPage();
 
+    // Interceptar chamadas de API do Next.js
+    const apiOffers: ScrapedOffer[] = [];
+    page.on('response', async (res) => {
+      const url = res.url();
+      const ct = res.headers()['content-type'] || '';
+      if (!ct.includes('json')) return;
+      if (!url.includes('reservas.aluguefoco.com.br')) return;
+      try {
+        const json = await res.json() as unknown;
+        const arr = findVehicleArray(json);
+        if (arr && arr.length > 0) {
+          console.log(`[FOCO] 🎯 ${arr.length} via API JSON (${url.slice(url.lastIndexOf('/'), url.length).slice(0, 60)})`);
+          for (const v of arr) {
+            const offer = rawToOffer(v, 'FOCO', deepLink, mapGroupToCategory);
+            if (offer) apiOffers.push(offer);
+          }
+        }
+      } catch { /* silent */ }
+    });
+
     // Estabelecer sessão na homepage antes de navegar para veículos
     try {
       await page.goto('https://reservas.aluguefoco.com.br/', { waitUntil: 'domcontentloaded', timeout: 12000 });
@@ -146,12 +166,45 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
     } catch { /* timeout */ }
     await page.waitForTimeout(8000);
 
-    const bodyText = await page.$eval('body', el => (el as HTMLElement).innerText).catch(() => '');
+    // 1ª prioridade: dados capturados via API intercept
+    if (apiOffers.length > 0) {
+      console.log(`[FOCO] ✓ ${apiOffers.length} ofertas reais via API (${storeCode})`);
+      return apiOffers;
+    }
 
+    // 2ª prioridade: __NEXT_DATA__ (SSR props injetados no HTML)
+    const nextDataOffers = await page.evaluate((dl: string): ScrapedOffer[] => {
+      const el = document.getElementById('__NEXT_DATA__');
+      if (!el) return [];
+      try {
+        const d = JSON.parse(el.textContent || '{}') as Record<string, unknown>;
+        const props = (d?.props as Record<string, unknown>)?.pageProps as Record<string, unknown>;
+        const vehicles = (props?.vehicles ?? props?.cars ?? props?.veiculos ?? []) as Record<string, unknown>[];
+        if (!Array.isArray(vehicles) || vehicles.length === 0) return [];
+        return vehicles.map(v => ({
+          provider: 'FOCO' as const,
+          model: String(v.name ?? v.model ?? v.grupo ?? v.descricao ?? '').slice(0, 60),
+          category: 'ECONOMICO' as const,
+          price: Number(v.price ?? v.daily_rate ?? v.valor_diario ?? v.diaria ?? 0),
+          transmission: /auto/i.test(String(v.transmission ?? v.cambio ?? '')) ? 'Automático' : 'Manual',
+          hasAC: true,
+          seats: Number(v.seats ?? v.passageiros ?? 5) || 5,
+          deepLink: dl,
+        })).filter(o => o.price > 0 && o.model);
+      } catch { return []; }
+    }, deepLink);
+
+    if (nextDataOffers.length > 0) {
+      console.log(`[FOCO] ✓ ${nextDataOffers.length} ofertas via __NEXT_DATA__ (${storeCode})`);
+      return nextDataOffers;
+    }
+
+    // 3ª prioridade: text parsing do innerText (abordagem original)
+    const bodyText = await page.$eval('body', el => (el as HTMLElement).innerText).catch(() => '');
     if (bodyText.includes('Por: R$') && bodyText.includes('Grupo')) {
       const offers = parseVehiclesFromText(bodyText, deepLink);
       if (offers.length > 0) {
-        console.log(`[FOCO] ✓ ${offers.length} ofertas reais (${storeCode})`);
+        console.log(`[FOCO] ✓ ${offers.length} ofertas via text parsing (${storeCode})`);
         return offers;
       }
     }

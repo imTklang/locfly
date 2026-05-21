@@ -110,15 +110,84 @@ export async function scrapeHertz(params: ScraperParams): Promise<ScrapedOffer[]
       } catch { /* silent */ }
     });
 
-    const searchUrl = `https://www.hertz.com/rentacar/reservation/` +
-      `?startLocationCode=${locationCode}` +
-      `&startDate=${params.startDate}&endDate=${params.endDate}&countryCode=BR`;
+    const reservationUrl = `https://www.hertz.com/rentacar/reservation/?countryCode=BR`;
 
     try {
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 18000 });
+      await page.goto(reservationUrl, { waitUntil: 'domcontentloaded', timeout: 18000 });
     } catch { /* timeout */ }
 
-    await page.waitForTimeout(5000);
+    // Wait for page JS to fully initialize (required for session cookies on fetch)
+    await page.waitForTimeout(8000);
+
+    // MM/DD/YYYY for pickupDay, YYYY/MM/DD for pickupDayStandard
+    const [sy, sm, sd] = params.startDate.split('-');
+    const [ey, em, ed] = params.endDate.split('-');
+    const pickupDay  = `${sm}/${sd}/${sy}`;
+    const dropoffDay = `${em}/${ed}/${ey}`;
+    const pickupStd  = `${sy}/${sm}/${sd}`;
+    const dropoffStd = `${ey}/${em}/${ed}`;
+
+    // Call itinerary/vehicles directly via fetch from within the page (session cookies included).
+    // NOTE: loc.hertz.com/WordWheel is GeoIP-restricted; from Brazilian IPs the autocomplete
+    // returns BR locations + correct pickupHiddenEOAG codes automatically. From non-BR IPs
+    // the OAG lookup fails (DZX006/NRX106). The form submission below works correctly on BR infra.
+    const apiResult = await page.evaluate(
+      async ({ loc, pickup, dropoff, pStd, dStd }: { loc: string; pickup: string; dropoff: string; pStd: string; dStd: string }) => {
+        const body = {
+          lastName: '', resSearch: false, showRentalAgreement: false, showEvRentalAgreement: false,
+          goldAnytimeRes: false, checkLIS: false, checkFPO: false, buttonLIS: false, buttonFPO: false,
+          showBothElements: false, cdpVerificationFailed: false, travelPurposeReq: false,
+          forceResHomePage: '', href: '/rentacar/rest/home/form', confirmationNumber: '',
+          arrivingUpdate: '', defaultTab: '', militaryClock: 1, majorAirport: '',
+          returnAtDifferentLocationCheckbox: '', dropoffLocation: '',
+          inpPickupAutoFill: '', inpPickupStateCode: '', inpPickupCountryCode: 'BR',
+          inpPickupSearchType: '', inpDropoffAutoFill: '', inpDropoffStateCode: '',
+          inpDropoffCountryCode: 'BR', inpDropoffSearchType: '',
+          pickupHiddenEOAG: '', dropoffHiddenEOAG: '',
+          memberOtherCdpField: '', cdpField: '', corporateRate: '', officialTravel: '',
+          pcNumber: '', typeInRateQuote: '', cvNumber: '', itNumber: '',
+          originalRqCheckBox: '', checkDiscount: '', affiliateMemberJoin: '',
+          affiliateMemberID: '', affiliateCallCount: 0, hertzlinkActive: false, companyId: '',
+          pickupDay: pickup, pickupTime: '12:00',
+          dropoffDay: dropoff, dropoffTime: '12:00',
+          pickupDayStandard: pStd, dropoffDayStandard: dStd,
+          no1ClubNumber: '', selectedCarType: 'ACAR', ageSelector: '', redeemPoints: '',
+          fromLocationSearch: false,
+          recommendationBrowserInfo: {
+            appCodeName: 'Mozilla', appName: 'Netscape', cookieEnabled: true,
+            language: 'pt-BR', onLine: true, platform: 'Win32', product: 'Gecko',
+            appVersion: navigator.appVersion, userAgent: navigator.userAgent, visitorId: '',
+          },
+          GBPEligible: false, memberSelectedCdp: '', cdpRadioButton: '',
+          pickupLocation: loc,
+        };
+        try {
+          const r = await fetch('/rentacar/rest/hertz/v2/itinerary/vehicles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json, */*' },
+            body: JSON.stringify(body),
+            credentials: 'include',
+          });
+          return { status: r.status, body: await r.text() };
+        } catch (e) { return { status: -1, body: '' }; }
+      },
+      { loc: locationCode, pickup: pickupDay, dropoff: dropoffDay, pStd: pickupStd, dStd: dropoffStd },
+    );
+
+    console.log(`[HERTZ] itinerary/vehicles → HTTP ${apiResult.status}`);
+    if (apiResult.status === 200) {
+      try {
+        const json = JSON.parse(apiResult.body);
+        const arr = findVehicleArray(json);
+        if (arr) {
+          console.log(`[HERTZ][🎯 veículos] itinerary/vehicles → ${arr.length} itens`);
+          for (const v of arr) {
+            const offer = rawToOffer(v, 'HERTZ', deepLink, mapCategory);
+            if (offer) captured.push(offer);
+          }
+        }
+      } catch { /* parse error */ }
+    }
 
     if (captured.length > 0) {
       console.log(`[HERTZ] ✓ ${captured.length} ofertas reais capturadas`);
