@@ -62,12 +62,28 @@ function buildDeepLink(storeCode: string, startDate: string, endDate: string): s
 
 function mapGroupToCategory(group: string): ScrapedOffer['category'] {
   const g = group.toUpperCase();
-  if (/ECON|COMPAC|MINI|BÁSICO|BASICO|GRUPO B|GRUPO C|GRUPO D/.test(g)) return 'ECONOMICO';
-  if (/SEDAN|INTERMEDIÁRIO|INTERMEDIARIO|GRUPO F|GRUPO H/.test(g)) return 'INTERMEDIARIO';
-  if (/SUV|4X4|GRUPO J/.test(g)) return 'SUV';
-  if (/LUX|EXEC|PREM|GRUPO L|GRUPO P/.test(g)) return 'LUXO';
-  if (/VAN|MINIVAN|GRUPO I/.test(g)) return 'VAN';
+  if (/\bVAN\b|MINIVAN|FURGÃO|FURGAO|GRUPO\s*I\b/.test(g)) return 'VAN';
+  if (/\bSUV\b|4X4|CROSSOVER|GRUPO\s*[JK]\b/.test(g)) return 'SUV';
+  if (/LUX|EXEC|PREM|GRUPO\s*[LP]\b/.test(g)) return 'LUXO';
+  if (/SEDAN|INTERMEDIÁRI|INTERMEDIARI|MÉDIO|MEDIO|GRUPO\s*[EFG]\b/.test(g)) return 'INTERMEDIARIO';
+  if (/ECON|COMPAC|MINI|BÁSICO|BASICO|GRUPO\s*[ABCD]\b/.test(g)) return 'ECONOMICO';
   return 'ECONOMICO';
+}
+
+// Override category based on well-known model names when group code is absent/ambiguous
+function inferCategoryFromModel(model: string): ScrapedOffer['category'] | null {
+  const m = model.toUpperCase().replace(/\bOU SIMILAR\b/gi, '').trim();
+  if (/\bSPIN\b|MASTER\b|DUCATO\b|SPRINTER\b|JUMPY\b/.test(m)) return 'VAN';
+  if (/KARDIAN|PULSE\b|T[-. ]CROSS|NIVUS\b|TRACKER\b|DUSTER\b|CRETA\b|\bKICKS\b|RENEGADE|COMPASS\b|HR[-. ]V\b|AIRCROSS|CAPTUR\b|\b2008\b|CX[-.]3\b|CX[-.]5\b/.test(m)) return 'SUV';
+  if (/\bCIVIC\b|COROLLA\b|VIRTUS\b|YARIS\b|CRUZE\b|JETTA\b|SENTRA\b|HB20S\b/.test(m)) return 'INTERMEDIARIO';
+  return null;
+}
+
+function applyModelCorrections(offers: ScrapedOffer[]): ScrapedOffer[] {
+  return offers.map(o => {
+    const cat = inferCategoryFromModel(o.model);
+    return cat ? { ...o, category: cat } : o;
+  });
 }
 
 function parseVehiclesFromText(text: string, deepLink: string): ScrapedOffer[] {
@@ -148,7 +164,10 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
           console.log(`[FOCO] 🎯 ${arr.length} via API JSON (${url.slice(url.lastIndexOf('/'), url.length).slice(0, 60)})`);
           for (const v of arr) {
             const offer = rawToOffer(v, 'FOCO', deepLink, mapGroupToCategory);
-            if (offer) apiOffers.push(offer);
+            if (offer) {
+              const cat = inferCategoryFromModel(offer.model);
+              apiOffers.push(cat ? { ...offer, category: cat } : offer);
+            }
           }
         }
       } catch { /* silent */ }
@@ -169,7 +188,7 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
     // 1ª prioridade: dados capturados via API intercept
     if (apiOffers.length > 0) {
       console.log(`[FOCO] ✓ ${apiOffers.length} ofertas reais via API (${storeCode})`);
-      return apiOffers;
+      return apiOffers; // inferCategoryFromModel already applied per-offer above
     }
 
     // 2ª prioridade: __NEXT_DATA__ (SSR props injetados no HTML)
@@ -181,22 +200,31 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
         const props = (d?.props as Record<string, unknown>)?.pageProps as Record<string, unknown>;
         const vehicles = (props?.vehicles ?? props?.cars ?? props?.veiculos ?? []) as Record<string, unknown>[];
         if (!Array.isArray(vehicles) || vehicles.length === 0) return [];
-        return vehicles.map(v => ({
-          provider: 'FOCO' as const,
-          model: String(v.name ?? v.model ?? v.grupo ?? v.descricao ?? '').slice(0, 60),
-          category: 'ECONOMICO' as const,
-          price: Number(v.price ?? v.daily_rate ?? v.valor_diario ?? v.diaria ?? 0),
-          transmission: /auto/i.test(String(v.transmission ?? v.cambio ?? '')) ? 'Automático' : 'Manual',
-          hasAC: true,
-          seats: Number(v.seats ?? v.passageiros ?? 5) || 5,
-          deepLink: dl,
-        })).filter(o => o.price > 0 && o.model);
+        return vehicles.map(v => {
+          const model = String(v.name ?? v.model ?? v.grupo ?? v.descricao ?? '').slice(0, 60);
+          const g = String(v.category ?? v.grupo ?? v.group ?? v.groupCode ?? v.groupName ?? '').toUpperCase();
+          let category: ScrapedOffer['category'] = 'ECONOMICO';
+          if (/\bVAN\b|MINIVAN/.test(g)) category = 'VAN';
+          else if (/\bSUV\b|4X4|CROSSOVER/.test(g)) category = 'SUV';
+          else if (/LUX|EXEC|PREM/.test(g)) category = 'LUXO';
+          else if (/INTERMEDIAR|SEDAN|MÉDIO|MEDIO/.test(g)) category = 'INTERMEDIARIO';
+          return {
+            provider: 'FOCO' as const,
+            model,
+            category,
+            price: Number(v.price ?? v.daily_rate ?? v.valor_diario ?? v.diaria ?? 0),
+            transmission: /auto/i.test(String(v.transmission ?? v.cambio ?? '')) ? 'Automático' : 'Manual',
+            hasAC: true,
+            seats: Number(v.seats ?? v.passageiros ?? 5) || 5,
+            deepLink: dl,
+          };
+        }).filter(o => o.price > 0 && o.model);
       } catch { return []; }
     }, deepLink);
 
     if (nextDataOffers.length > 0) {
       console.log(`[FOCO] ✓ ${nextDataOffers.length} ofertas via __NEXT_DATA__ (${storeCode})`);
-      return nextDataOffers;
+      return applyModelCorrections(nextDataOffers);
     }
 
     // 3ª prioridade: text parsing do innerText (abordagem original)
@@ -205,7 +233,7 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
       const offers = parseVehiclesFromText(bodyText, deepLink);
       if (offers.length > 0) {
         console.log(`[FOCO] ✓ ${offers.length} ofertas via text parsing (${storeCode})`);
-        return offers;
+        return applyModelCorrections(offers);
       }
     }
 

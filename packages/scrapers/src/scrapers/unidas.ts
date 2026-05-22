@@ -29,16 +29,16 @@ interface Availability {
 function mapCategory(info: string): ScrapedOffer['category'] {
   const s = info.toUpperCase();
   if (/VAN|MINIVAN|FURGÃO|FURGAO/.test(s)) return 'VAN';
-  if (/SUV/.test(s)) return 'SUV';
-  if (/EXECUT|LUXO|PREMIUM/.test(s)) return 'LUXO';
-  if (/SEDAN|INTERMEDIÁRIO|INTERMEDIARIO|MÉDIO|MEDIO|AUTOMÁTICO|AUTOMATICO|PICAPE/.test(s)) return 'INTERMEDIARIO';
+  if (/\bSUV\b|4X4|CROSSOVER/.test(s)) return 'SUV';
+  if (/EXECUT|LUXO|PREMIUM|ESPECIAL/.test(s)) return 'LUXO';
+  if (/INTERMEDIÁRI|INTERMEDIARI|SEDAN|MÉDIO\b|MEDIO\b|PICAPE/.test(s)) return 'INTERMEDIARIO';
   return 'ECONOMICO';
 }
 
 function parseTransmission(details: GroupDetail[]): string {
-  const trans = details.find(d => /transmissão|transmissao/i.test(d.label));
-  if (!trans) return 'Manual';
-  return /automát|automatic/i.test(trans.label) ? 'Automático' : 'Manual';
+  const trans = details.find(d => /transmissão|transmissao|câmbio|cambio/i.test(d.label));
+  if (!trans) return 'Automático'; // modern UNIDAS fleet is mostly automatic
+  return /automát|automatic|cvt|auto\b/i.test(trans.label) ? 'Automático' : 'Manual';
 }
 
 function parseSeats(details: GroupDetail[]): number {

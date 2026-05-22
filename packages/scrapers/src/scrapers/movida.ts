@@ -6,10 +6,10 @@ const DEEP_LINK = 'https://www.movida.com.br/locacao-de-veiculos';
 
 function mapCategory(groupName: string): ScrapedOffer['category'] {
   const s = groupName.toUpperCase();
-  if (/SUV|4X4/.test(s)) return 'SUV';
-  if (/VAN|MINIVAN|MASTER|DUCATO|SPRINTER/.test(s)) return 'VAN';
-  if (/LUX|PREM|EXECUT|BMW|AUDI|MERC/.test(s)) return 'LUXO';
-  if (/INTER|SEDAN/.test(s)) return 'INTERMEDIARIO';
+  if (/VAN|MINIVAN|MASTER|DUCATO|SPRINTER|JUMPY|FURGÃO|FURGAO/.test(s)) return 'VAN';
+  if (/SUV|4X4|CROSSOVER/.test(s)) return 'SUV';
+  if (/LUX|PREM|EXECUT|BMW|AUDI|MERC|VOLVO|JAGUAR/.test(s)) return 'LUXO';
+  if (/INTER|SEDAN|COMPACTO SEDÃ|COMPACTO SEDA/.test(s)) return 'INTERMEDIARIO';
   return 'ECONOMICO';
 }
 
