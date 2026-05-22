@@ -184,11 +184,9 @@ function App() {
         <div className="flex w-[200%] animate-infinite-slider items-center">
           {[...Array(2)].map((_, i) => (
             <div key={i} className="flex w-1/2 justify-around items-center px-4">
-              <img src="/localiza.png" alt="Localiza" className="h-10 w-auto object-contain opacity-40 grayscale transition-all duration-500 hover:grayscale-0 hover:opacity-100 cursor-default" />
               <img src="/movida.png" alt="Movida" className="h-10 w-auto object-contain opacity-40 grayscale transition-all duration-500 hover:grayscale-0 hover:opacity-100 cursor-default" />
               <img src="/unidas.png" alt="Unidas" className="h-10 w-auto object-contain opacity-40 grayscale transition-all duration-500 hover:grayscale-0 hover:opacity-100 cursor-default" />
               <img src="/foco.png" alt="Foco" className="h-10 w-auto object-contain opacity-40 grayscale transition-all duration-500 hover:grayscale-0 hover:opacity-100 cursor-default" />
-              <img src="/hertz.png" alt="Hertz" className="h-10 w-auto object-contain opacity-40 grayscale transition-all duration-500 hover:grayscale-0 hover:opacity-100 cursor-default" />
             </div>
           ))}
         </div>

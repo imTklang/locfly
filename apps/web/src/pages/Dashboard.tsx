@@ -30,11 +30,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
-  LOCALIZA: 'bg-green-500/20 text-green-300',
   MOVIDA: 'bg-blue-500/20 text-blue-300',
   UNIDAS: 'bg-orange-500/20 text-orange-300',
   FOCO: 'bg-purple-500/20 text-purple-300',
-  HERTZ: 'bg-yellow-500/20 text-yellow-300',
 };
 
 export default function Dashboard() {

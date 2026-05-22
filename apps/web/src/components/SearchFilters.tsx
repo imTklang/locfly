@@ -8,7 +8,7 @@ const CATEGORIES = [
   { value: 'VAN', label: 'Van' },
 ]
 
-const PROVIDERS = ['LOCALIZA', 'MOVIDA', 'UNIDAS', 'FOCO', 'HERTZ']
+const PROVIDERS = ['MOVIDA', 'UNIDAS', 'FOCO']
 
 const TRANSMISSIONS = [
   { value: '', label: 'Todos' },

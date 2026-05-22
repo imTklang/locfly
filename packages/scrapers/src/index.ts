@@ -1,16 +1,14 @@
 import { ScraperParams, ScrapedOffer, ScraperResult } from './types';
-import { scrapeLocaliza } from './scrapers/localiza';
+// import { scrapeLocaliza } from './scrapers/localiza'; // desativada — sem scraper real ativo
 import { scrapeMovida } from './scrapers/movida';
 import { scrapeUnidas } from './scrapers/unidas';
-import { scrapeHertz } from './scrapers/hertz';
+// import { scrapeHertz } from './scrapers/hertz'; // desativada — GeoIP-restrita fora do BR
 import { scrapeFoco } from './scrapers/foco';
 import { closeBrowser } from './browser';
 
 const SCRAPERS: Array<{ name: ScrapedOffer['provider']; fn: (p: ScraperParams) => Promise<ScrapedOffer[]> }> = [
-  { name: 'LOCALIZA', fn: scrapeLocaliza },
   { name: 'MOVIDA', fn: scrapeMovida },
   { name: 'UNIDAS', fn: scrapeUnidas },
-  { name: 'HERTZ', fn: scrapeHertz },
   { name: 'FOCO', fn: scrapeFoco },
 ];
 
