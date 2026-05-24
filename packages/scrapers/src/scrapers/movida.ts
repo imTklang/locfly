@@ -224,6 +224,10 @@ export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[
     }
     console.log(`[MOVIDA] results page: ${page.url()}`);
 
+    // Scroll para ativar lazy-loading se houver
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(2000);
+
     // ── 8. Scrape vehicle cards ──
     const raw = await page.evaluate(() => {
       type Card = { model: string; groupCode: string; groupName: string; priceText: string; imageUrl: string };

@@ -261,7 +261,7 @@ export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[
   }
 
   return raw
-    .filter(a => a.isAvailable && a.unitDailyValue > 0)
+    .filter(a => a.unitDailyValue > 0)
     .map(a => {
       const model = a.group.modelsDescription || a.group.info;
       const transmission = parseTransmission(a.group.details);

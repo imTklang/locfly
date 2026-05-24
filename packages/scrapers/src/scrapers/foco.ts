@@ -227,7 +227,84 @@ export async function scrapeFoco(params: ScraperParams): Promise<ScrapedOffer[]>
       return applyModelCorrections(nextDataOffers);
     }
 
-    // 3ª prioridade: text parsing do innerText (abordagem original)
+    // 3ª prioridade: DOM scraping via CSS classes reais do FOCO (Next.js CardCar_*)
+    const domOffers = await page.evaluate((dl: string): Array<{
+      model: string; groupText: string; price: number;
+      transmission: string; hasAC: boolean; seats: number;
+    }> => {
+      const results: Array<{
+        model: string; groupText: string; price: number;
+        transmission: string; hasAC: boolean; seats: number;
+      }> = [];
+
+      // Usa H3 do título como âncora (1 por card)
+      const titles = Array.from(document.querySelectorAll('h3[class*="CardCar_card__title"]'));
+
+      for (const h3 of titles) {
+        // Sobe para encontrar o container completo do card (contém "Por: R$")
+        let card: Element | null = h3.parentElement;
+        for (let i = 0; i < 6 && card; i++) {
+          if (((card as HTMLElement).innerText || '').includes('Por: R$')) break;
+          card = card.parentElement;
+        }
+        if (!card) continue;
+
+        // Pula carros indisponíveis
+        const btn = card.querySelector('button');
+        if (btn && /Indisponível/i.test(btn.textContent || '')) continue;
+
+        const cardText = (card as HTMLElement).innerText || '';
+
+        // Título: "Grupo J+ • SUV Automático"
+        const titleText = (h3.textContent || '').trim();
+
+        // Modelo: no header, linha após o título (filtra "Grupo", "Oferta", "Pro")
+        const headerEl = h3.closest('[class*="CardCar_card__header"]') as HTMLElement | null;
+        const headerLines = ((headerEl?.innerText || titleText)).split('\n').map((l: string) => l.trim()).filter(Boolean);
+        const model = headerLines.find((l: string) =>
+          l && !/^Grupo\s/i.test(l) && !/^Oferta/i.test(l) && !/^Pro\b/i.test(l) && l !== titleText
+        ) || '';
+        if (!model) continue;
+
+        // Preço
+        const priceMatch = cardText.match(/Por:\s*R\$\s*([\d.,]+)/);
+        if (!priceMatch) continue;
+        const price = parseFloat(priceMatch[1].replace(/\./g, '').replace(',', '.'));
+        if (price <= 0) continue;
+
+        const seatsMatch = cardText.match(/(\d+)\s*Passageiro/);
+        const seats = seatsMatch ? parseInt(seatsMatch[1]) : 5;
+        const hasAC = cardText.includes('Ar Condicionado');
+        const isAuto = /Automático/i.test(titleText);
+
+        results.push({
+          model: model.replace(/\s*ou similar\s*$/i, '').trim(),
+          groupText: titleText,
+          price,
+          transmission: isAuto ? 'Automático' : 'Manual',
+          hasAC,
+          seats,
+        });
+      }
+      return results;
+    }, deepLink).catch(() => []);
+
+    if (domOffers.length > 0) {
+      const offers: ScrapedOffer[] = domOffers.map(o => ({
+        provider: 'FOCO' as const,
+        model: o.model,
+        category: mapGroupToCategory(o.groupText),
+        price: o.price,
+        transmission: o.transmission,
+        hasAC: o.hasAC,
+        seats: o.seats,
+        deepLink,
+      }));
+      console.log(`[FOCO] ✓ ${offers.length} ofertas via DOM scraping (${storeCode})`);
+      return applyModelCorrections(offers);
+    }
+
+    // 4ª prioridade: text parsing do innerText (fallback sem imagens)
     const bodyText = await page.$eval('body', el => (el as HTMLElement).innerText).catch(() => '');
     if (bodyText.includes('Por: R$') && bodyText.includes('Grupo')) {
       const offers = parseVehiclesFromText(bodyText, deepLink);
