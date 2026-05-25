@@ -1,5 +1,5 @@
 import { ScraperParams, ScrapedOffer } from '../types';
-import { newContext } from '../browser';
+import { newContext, findVehicleArray, rawToOffer } from '../browser';
 
 const BOOKING_URL = 'https://www.movida.com.br/reserva/itinerario-escolher/';
 const DEEP_LINK = 'https://www.movida.com.br/locacao-de-veiculos';
@@ -79,15 +79,35 @@ const HELPERS = `
 `;
 
 const FLEET: ScrapedOffer[] = [
+  // ECONÔMICO
   { provider: 'MOVIDA', model: 'Renault Kwid', category: 'ECONOMICO', price: 72.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK, imageUrl: 'https://prdmovida.blob.core.windows.net/public/imagens/cars/t3_grupo_AX.jpg' },
+  { provider: 'MOVIDA', model: 'Fiat Mobi', category: 'ECONOMICO', price: 67.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'MOVIDA', model: 'Hyundai HB20', category: 'ECONOMICO', price: 84.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK, imageUrl: 'https://prdmovida.blob.core.windows.net/public/imagens/cars/t3_grupo_B.jpg' },
-  { provider: 'MOVIDA', model: 'Chevrolet Onix Plus', category: 'ECONOMICO', price: 96.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK, imageUrl: 'https://prdmovida.blob.core.windows.net/public/imagens/cars/t3_grupo_BX.jpg' },
-  { provider: 'MOVIDA', model: 'Honda Civic', category: 'INTERMEDIARIO', price: 159.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Chevrolet Onix Hatch', category: 'ECONOMICO', price: 88.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Fiat Argo', category: 'ECONOMICO', price: 86.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'VW Polo', category: 'ECONOMICO', price: 92.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  // INTERMEDIÁRIO
+  { provider: 'MOVIDA', model: 'Chevrolet Onix Plus', category: 'INTERMEDIARIO', price: 96.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK, imageUrl: 'https://prdmovida.blob.core.windows.net/public/imagens/cars/t3_grupo_BX.jpg' },
+  { provider: 'MOVIDA', model: 'Nissan Versa', category: 'INTERMEDIARIO', price: 119.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Volkswagen Virtus', category: 'INTERMEDIARIO', price: 129.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Toyota Yaris Sedan', category: 'INTERMEDIARIO', price: 134.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'MOVIDA', model: 'Nissan Sentra', category: 'INTERMEDIARIO', price: 144.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Honda Civic', category: 'INTERMEDIARIO', price: 159.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  // SUV
+  { provider: 'MOVIDA', model: 'Renault Duster', category: 'SUV', price: 199.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Fiat Pulse', category: 'SUV', price: 209.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Volkswagen T-Cross', category: 'SUV', price: 219.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Hyundai Creta', category: 'SUV', price: 229.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'MOVIDA', model: 'Hyundai Tucson', category: 'SUV', price: 269.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'MOVIDA', model: 'Jeep Compass', category: 'SUV', price: 289.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Jeep Commander', category: 'SUV', price: 329.90, transmission: 'Automático', hasAC: true, seats: 7, deepLink: DEEP_LINK },
+  // LUXO
+  { provider: 'MOVIDA', model: 'Toyota Corolla', category: 'LUXO', price: 249.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'MOVIDA', model: 'Audi A4', category: 'LUXO', price: 430.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'BMW Série 3', category: 'LUXO', price: 480.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  // VAN
   { provider: 'MOVIDA', model: 'Renault Master', category: 'VAN', price: 360.00, transmission: 'Manual', hasAC: true, seats: 15, deepLink: DEEP_LINK },
+  { provider: 'MOVIDA', model: 'Fiat Ducato', category: 'VAN', price: 340.00, transmission: 'Manual', hasAC: true, seats: 12, deepLink: DEEP_LINK },
 ];
 
 export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[]> {
@@ -95,10 +115,22 @@ export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[
   const [, rm, rd] = params.endDate.split('-').map(Number);
 
   const context = await newContext();
+  const apiCaptured: ScrapedOffer[] = [];
   try {
     const page = await context.newPage();
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) console.log(`[MOVIDA][NAV] ${frame.url().slice(0, 80)}`);
+    page.on('response', async (res) => {
+      try {
+        const ct = res.headers()['content-type'] || '';
+        if (!ct.includes('json')) return;
+        const json = await res.json();
+        const arr = findVehicleArray(json);
+        if (!arr || arr.length === 0) return;
+        console.log(`[MOVIDA][🎯 API] ${res.url().slice(0, 90)} → ${arr.length} itens`);
+        for (const v of arr) {
+          const offer = rawToOffer(v, 'MOVIDA', DEEP_LINK, mapCategory);
+          if (offer) apiCaptured.push(offer);
+        }
+      } catch { /* silent */ }
     });
 
     await page.goto(BOOKING_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -282,11 +314,15 @@ export async function scrapeMovida(params: ScraperParams): Promise<ScrapedOffer[
     }).filter((o) => o.price > 0);
 
     if (offers.length === 0) throw new Error('no valid offers after parsing');
-    console.log(`[MOVIDA] ✓ ${offers.length} ofertas reais capturadas`);
+    console.log(`[MOVIDA] ✓ ${offers.length} ofertas reais capturadas (DOM)`);
     return offers;
 
   } catch (err) {
     console.error(`[MOVIDA] erro: ${err instanceof Error ? err.message : err}`);
+    if (apiCaptured.length > 0) {
+      console.log(`[MOVIDA] ✓ ${apiCaptured.length} ofertas via API intercept`);
+      return apiCaptured;
+    }
   } finally {
     await context.close();
   }

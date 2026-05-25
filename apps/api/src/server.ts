@@ -10,6 +10,7 @@ import authRoutes from './routes/auth';
 import searchRoutes from './routes/search';
 import bookmarkRoutes from './routes/bookmarks';
 import alertRoutes from './routes/alerts';
+import catalogRoutes from './routes/catalog';
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -35,6 +36,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/bookmarks', bookmarkRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/catalog', catalogRoutes);
 
 app.listen(port, () => {
   logger.info(`LocFly API rodando em http://localhost:${port}`);

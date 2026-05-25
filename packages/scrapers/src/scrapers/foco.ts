@@ -15,8 +15,7 @@ const FOCO_CODES: Record<string, string> = {
   'galeao': 'GIG10',
   'santos dumont': 'SDU10',
   'sdu': 'SDU10',
-  'brasília': 'NAT10',
-  'brasilia': 'NAT10',
+  'natal': 'NAT10',
   'salvador': 'SSA10',
   'fortaleza': 'FOR10',
   'recife': 'REC20',
@@ -28,7 +27,6 @@ const FOCO_CODES: Record<string, string> = {
   'florianopolis': 'FLN10',
   'goiânia': 'GYN10',
   'goiania': 'GYN10',
-  'natal': 'NAT10',
   'maceió': 'MCZ10',
   'maceio': 'MCZ10',
   'joão pessoa': 'JPA10',
@@ -129,13 +127,30 @@ function parseVehiclesFromText(text: string, deepLink: string): ScrapedOffer[] {
 }
 
 const FLEET: ScrapedOffer[] = [
-  { provider: 'FOCO', model: 'Fiat Mobi ou Similar', category: 'ECONOMICO', price: 119.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  // ECONÔMICO
+  { provider: 'FOCO', model: 'Renault Kwid ou Similar', category: 'ECONOMICO', price: 109.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Fiat Mobi ou Similar', category: 'ECONOMICO', price: 114.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Hyundai HB20 ou Similar', category: 'ECONOMICO', price: 118.50, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Fiat Argo ou Similar', category: 'ECONOMICO', price: 124.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
   { provider: 'FOCO', model: 'Peugeot 208 ou Similar', category: 'ECONOMICO', price: 128.60, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
   { provider: 'FOCO', model: 'VW Polo ou Similar', category: 'ECONOMICO', price: 128.70, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  // INTERMEDIÁRIO
   { provider: 'FOCO', model: 'HB20S ou Similar', category: 'INTERMEDIARIO', price: 133.30, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
-  { provider: 'FOCO', model: 'VW Virtus ou Similar', category: 'INTERMEDIARIO', price: 174.80, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Nissan Versa ou Similar', category: 'INTERMEDIARIO', price: 144.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Toyota Yaris Sedan ou Similar', category: 'INTERMEDIARIO', price: 155.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'VW Virtus ou Similar', category: 'INTERMEDIARIO', price: 174.80, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  // SUV
   { provider: 'FOCO', model: 'Renault Kardian ou Similar', category: 'SUV', price: 174.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Renault Duster ou Similar', category: 'SUV', price: 183.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: '' },
   { provider: 'FOCO', model: 'VW T-Cross ou Similar', category: 'SUV', price: 190.50, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Fiat Pulse ou Similar', category: 'SUV', price: 195.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Hyundai Creta ou Similar', category: 'SUV', price: 209.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Jeep Compass ou Similar', category: 'SUV', price: 259.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  // LUXO
+  { provider: 'FOCO', model: 'Nissan Sentra ou Similar', category: 'LUXO', price: 239.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  { provider: 'FOCO', model: 'Toyota Corolla ou Similar', category: 'LUXO', price: 249.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: '' },
+  // VAN
+  { provider: 'FOCO', model: 'Fiat Doblò ou Similar', category: 'VAN', price: 299.90, transmission: 'Manual', hasAC: true, seats: 7, deepLink: '' },
   { provider: 'FOCO', model: 'Chevrolet Spin ou Similar', category: 'VAN', price: 379.70, transmission: 'Automático', hasAC: true, seats: 7, deepLink: '' },
 ];
 

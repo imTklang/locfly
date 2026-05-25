@@ -14,6 +14,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   MOVIDA: 'bg-blue-500/20 text-blue-300',
   UNIDAS: 'bg-orange-500/20 text-orange-300',
   FOCO: 'bg-purple-500/20 text-purple-300',
+  LOCALIZA: 'bg-green-500/20 text-green-300',
 }
 
 interface CarOfferCardProps {

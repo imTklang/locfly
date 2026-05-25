@@ -26,17 +26,18 @@ function mapPrice(descricao: string): number {
   if (/PRIME/.test(s)) return 490;
   if (/BLINDAD/.test(s)) return 450;
   if (/HÍBRID|HYBRIDO/.test(s)) return 390;
-  if (/SUV.*ESPECIAL|ESPECIAL.*SUV|7 LUGAR/.test(s)) return 329.90;
-  if (/SUV/.test(s)) return 289.90;
-  if (/EXEC.*AUTO|AUTO.*EXEC/.test(s)) return 279.90;
+  if (/GRAND\s*CHEROKEE|CAYENNE|MACAN/.test(s)) return 590;
+  if (/SUV.*ESPECIAL|ESPECIAL.*SUV|7 LUGAR|COMMANDER|SW4/.test(s)) return 329.90;
+  if (/\bSUV\b|COMPASS|RENEGADE|DUSTER|T.CROSS|CRETA|PULSE|TRACKER|KICKS|KARDIAN|NIVUS/.test(s)) return 219.90;
+  if (/EXEC.*AUTO|AUTO.*EXEC|COROLLA|CIVIC|SENTRA/.test(s)) return 279.90;
   if (/EXEC/.test(s)) return 249.90;
-  if (/INTER.*AUTO|AUTO.*INTER/.test(s)) return 154.90;
+  if (/INTER.*AUTO|AUTO.*INTER|VIRTUS|YARIS|VERSA|CITY|HB20S/.test(s)) return 154.90;
   if (/INTER/.test(s)) return 134.90;
   if (/ECON.*ESPECIAL|ESPECIAL.*ECON/.test(s)) return 109.90;
-  if (/ECON.*SEDAN|SEDAN.*ECON/.test(s)) return 104.90;
-  if (/ECON.*HATCH|HATCH.*ECON/.test(s)) return 97.90;
+  if (/ECON.*SEDAN|SEDAN.*ECON|CRONOS|HB20S/.test(s)) return 104.90;
+  if (/ECON.*HATCH|HATCH.*ECON|HB20\b|ARGO/.test(s)) return 97.90;
   if (/ECON/.test(s)) return 94.90;
-  if (/COMPAC/.test(s)) return 89.90;
+  if (/COMPAC|MOBI|KWID/.test(s)) return 89.90;
   return 99.90;
 }
 
@@ -45,11 +46,14 @@ function mapTransmission(descricao: string): 'Manual' | 'Automático' {
 }
 
 function extractModel(descricaoVeiculoPadrao: string): string {
-  const match = descricaoVeiculoPadrao.match(/similar a:\s*([^,]+)/i);
+  // API returns both Portuguese ("similar a:") and English ("similar to:")
+  const match = descricaoVeiculoPadrao.match(/similar (?:a|to):\s*([^,\n]+)/i);
   if (match) {
     return match[1].trim().replace(/\s+\d+\.\d+.*$/, '').trim() + ' ou Similar';
   }
-  return descricaoVeiculoPadrao.slice(0, 40);
+  // Fallback: strip "Vehicle similar to:" prefix if present
+  const cleaned = descricaoVeiculoPadrao.replace(/^Vehicle similar to:\s*/i, '').trim();
+  return cleaned.slice(0, 40);
 }
 
 export async function fetchLocalizaGrupos(): Promise<ScrapedOffer[]> {
@@ -61,15 +65,10 @@ export async function fetchLocalizaGrupos(): Promise<ScrapedOffer[]> {
         const data = JSON.parse(body.toString()) as { grupos?: GrupoCarros[] };
         const grupos = data.grupos ?? [];
 
-        const standard = grupos.filter(
-          (g) => !g.ehFast && !/BLINDADO|PRIME|HÍBRIDO|HYBRIDO/i.test(g.descricao)
-        );
-
         const seen = new Set<string>();
-        for (const g of standard) {
-          const key = `${mapCategory(g.descricao)}-${mapPrice(g.descricao)}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
+        for (const g of grupos) {
+          if (seen.has(g.codigo)) continue;
+          seen.add(g.codigo);
           collected.push({
             provider: 'LOCALIZA',
             model: extractModel(g.descricaoVeiculoPadrao),

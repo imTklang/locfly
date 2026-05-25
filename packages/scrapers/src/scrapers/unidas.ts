@@ -1,10 +1,7 @@
-import https from 'https';
 import { ScraperParams, ScrapedOffer } from '../types';
 import { newContext } from '../browser';
 
 // ── Types ──────────────────────────────────────────────────────────────────
-
-interface StoreInfo { code: string; name: string; }
 
 interface GroupDetail { iconUrl: string; label: string; }
 
@@ -48,48 +45,46 @@ function parseSeats(details: GroupDetail[]): number {
   return m ? parseInt(m[0]) : 5;
 }
 
-async function resolveStoreCode(location: string): Promise<StoreInfo | null> {
-  return new Promise((resolve) => {
-    const url = `https://apisiterac.unidas.com.br/api/v3/stores/details?keyWord=${encodeURIComponent(location)}&storeType=0`;
-    https.get(url, { headers: { Accept: 'application/json' } }, (res) => {
-      let body = '';
-      res.on('data', (c) => (body += c));
-      res.on('end', () => {
-        try {
-          const d = JSON.parse(body) as { data?: Array<{ storeCode: string; description?: string }> };
-          const first = d?.data?.[0];
-          if (!first?.storeCode) { resolve(null); return; }
-          resolve({ code: first.storeCode, name: first.description ?? location });
-        } catch { resolve(null); }
-      });
-      res.on('error', () => resolve(null));
-    }).on('error', () => resolve(null));
-  });
-}
-
 // ── Static fallback ────────────────────────────────────────────────────────
 
 const DEEP_LINK = 'https://www.unidas.com.br/reserve-um-carro';
 
 const FLEET: ScrapedOffer[] = [
+  // ECONÔMICO
   { provider: 'UNIDAS', model: 'Fiat Mobi', category: 'ECONOMICO', price: 74.95, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
-  { provider: 'UNIDAS', model: 'Volkswagen Gol', category: 'ECONOMICO', price: 84.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Renault Kwid', category: 'ECONOMICO', price: 69.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Volkswagen Gol', category: 'ECONOMICO', price: 82.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Hyundai HB20', category: 'ECONOMICO', price: 84.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Chevrolet Onix', category: 'ECONOMICO', price: 89.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Fiat Argo', category: 'ECONOMICO', price: 85.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  // INTERMEDIÁRIO
   { provider: 'UNIDAS', model: 'Hyundai HB20S Automático', category: 'INTERMEDIARIO', price: 129.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Nissan Versa', category: 'INTERMEDIARIO', price: 134.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Toyota Yaris Sedan', category: 'INTERMEDIARIO', price: 139.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'UNIDAS', model: 'Volkswagen Virtus', category: 'INTERMEDIARIO', price: 149.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Honda City', category: 'INTERMEDIARIO', price: 154.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  // SUV
+  { provider: 'UNIDAS', model: 'Renault Duster', category: 'SUV', price: 199.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Volkswagen T-Cross', category: 'SUV', price: 219.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Hyundai Creta', category: 'SUV', price: 249.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'UNIDAS', model: 'Jeep Renegade', category: 'SUV', price: 239.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'UNIDAS', model: 'Mitsubishi Eclipse Cross', category: 'SUV', price: 264.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Jeep Compass', category: 'SUV', price: 279.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  // LUXO
+  { provider: 'UNIDAS', model: 'Toyota Corolla', category: 'LUXO', price: 259.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
   { provider: 'UNIDAS', model: 'Jeep Grand Cherokee', category: 'LUXO', price: 490.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'BMW Série 3', category: 'LUXO', price: 460.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: DEEP_LINK },
+  // VAN
   { provider: 'UNIDAS', model: 'Fiat Ducato', category: 'VAN', price: 350.00, transmission: 'Manual', hasAC: true, seats: 15, deepLink: DEEP_LINK },
+  { provider: 'UNIDAS', model: 'Renault Master', category: 'VAN', price: 385.00, transmission: 'Manual', hasAC: true, seats: 14, deepLink: DEEP_LINK },
 ];
 
 // ── Browser form automation ────────────────────────────────────────────────
 
 async function scrapeViaPlaywright(params: ScraperParams): Promise<Availability[]> {
-  const [, sm, sd] = params.startDate.split('-').map(Number);
-  const [, em, ed] = params.endDate.split('-').map(Number);
+  const [sy, sm, sd] = params.startDate.split('-').map(Number);
+  const [ey, em, ed] = params.endDate.split('-').map(Number);
   const today = new Date();
-  const sy = parseInt(params.startDate.split('-')[0]);
-  const ey = parseInt(params.endDate.split('-')[0]);
   const startMonthsForward = (sm - (today.getMonth() + 1)) + (sy - today.getFullYear()) * 12;
   const endMonthsForward = (em - (today.getMonth() + 1)) + (ey - today.getFullYear()) * 12;
 
@@ -243,11 +238,6 @@ async function scrapeViaPlaywright(params: ScraperParams): Promise<Availability[
 // ── Main export ────────────────────────────────────────────────────────────
 
 export async function scrapeUnidas(params: ScraperParams): Promise<ScrapedOffer[]> {
-  const store = await resolveStoreCode(params.location);
-  if (store) {
-    console.log(`[UNIDAS] loja mais próxima: ${store.name} (${store.code})`);
-  }
-
   let raw: Availability[] = [];
   try {
     raw = await scrapeViaPlaywright(params);

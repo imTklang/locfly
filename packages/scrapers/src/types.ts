@@ -1,4 +1,4 @@
-export type Provider = 'LOCALIZA' | 'MOVIDA' | 'UNIDAS' | 'HERTZ' | 'FOCO' | 'OTHER';
+export type Provider = 'LOCALIZA' | 'MOVIDA' | 'UNIDAS' | 'FOCO' | 'OTHER';
 export type Category = 'ECONOMICO' | 'INTERMEDIARIO' | 'SUV' | 'LUXO' | 'VAN';
 
 export interface ScraperParams {

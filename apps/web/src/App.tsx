@@ -4,6 +4,7 @@ import { MapPin, Calendar, Check, ShieldCheck, Lock, ArrowRight, Activity, Zap, 
 import { motion } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
 import { searchSchema } from './schemas/search';
+import { CatalogSection } from './components/CatalogSection';
 import './App.css';
 
 function App() {
@@ -276,6 +277,8 @@ function App() {
           </div>
         </div>
       </section>
+
+      <CatalogSection />
 
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/5 bg-[#020202] pt-20 pb-10 mt-auto">

@@ -1,5 +1,5 @@
 // Providers and categories — sync with packages/scrapers/src/types.ts
-export type Provider = 'LOCALIZA' | 'MOVIDA' | 'UNIDAS' | 'HERTZ' | 'FOCO' | 'OTHER';
+export type Provider = 'LOCALIZA' | 'MOVIDA' | 'UNIDAS' | 'FOCO' | 'OTHER';
 export type Category = 'ECONOMICO' | 'INTERMEDIARIO' | 'SUV' | 'LUXO' | 'VAN';
 
 export interface SearchParams {

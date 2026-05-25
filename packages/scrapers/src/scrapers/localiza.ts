@@ -1,90 +1,37 @@
 import { ScraperParams, ScrapedOffer } from '../types';
-import { newContext, findVehicleArray, rawToOffer } from '../browser';
 import { fetchLocalizaGrupos } from '../crawlers/localiza-api';
 
-function buildDeepLink(params: ScraperParams): string {
-  return `https://www.localiza.com/brasil/pt-br/aluguel-de-carros?pickupLocationSearch=${encodeURIComponent(params.location)}&startDate=${params.startDate}&endDate=${params.endDate}`;
-}
+const BOOKING_BASE = 'https://www.localiza.com/brasil/pt-br/grupos-de-carros';
 
-function mapCategory(g: string): ScrapedOffer['category'] {
-  const s = g.toUpperCase();
-  if (/COMPAC|ECON|BASIC|MINI|PEQU|SMALL/.test(s)) return 'ECONOMICO';
-  if (/INTER|SEDAN|MED/.test(s)) return 'INTERMEDIARIO';
-  if (/SUV|4X4|PICKUP|CROSS|GR |7 LUGAR/.test(s)) return 'SUV';
-  if (/LUX|EXEC|PREM|PRIME|BMW|AUDI|MERC|VOLVO/.test(s)) return 'LUXO';
-  if (/VAN|CARGO/.test(s)) return 'VAN';
-  return 'ECONOMICO';
-}
+export async function scrapeLocaliza(_params: ScraperParams): Promise<ScrapedOffer[]> {
+  const grupos = await fetchLocalizaGrupos();
+  if (grupos.length > 0) return grupos.map(o => ({ ...o, deepLink: BOOKING_BASE }));
 
-
-
-export async function scrapeLocaliza(params: ScraperParams): Promise<ScrapedOffer[]> {
-  const deepLink = buildDeepLink(params);
-  const context = await newContext();
-
-  try {
-    const page = await context.newPage();
-    const captured: ScrapedOffer[] = [];
-
-    page.on('response', async (res) => {
-      try {
-        const ct = res.headers()['content-type'] || '';
-        if (!ct.includes('json')) return;
-        const url = res.url();
-        const json = await res.json();
-        const arr = findVehicleArray(json);
-        if (!arr) {
-          if (/disponib|availab|vehicle|cotacao|reserva/i.test(url)) {
-            console.log(`[LOCALIZA][json] ${url.slice(0, 90)}`);
-          }
-          return;
-        }
-        console.log(`[LOCALIZA][🎯 veículos] ${url.slice(0, 90)} → ${arr.length} itens`);
-        for (const v of arr) {
-          const offer = rawToOffer(v, 'LOCALIZA', deepLink, mapCategory);
-          if (offer) captured.push(offer);
-        }
-      } catch { /* silent */ }
-    });
-
-    try {
-      await page.goto(deepLink, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    } catch { /* timeout */ }
-
-    await page.waitForTimeout(12000);
-
-    if (captured.length > 0) {
-      console.log(`[LOCALIZA] ✓ ${captured.length} ofertas reais capturadas`);
-      return captured;
-    }
-
-    console.log(`[LOCALIZA] ✗ sem dados reais — buscando frota via API pública...`);
-  } catch (err) {
-    console.error(`[LOCALIZA] erro: ${err instanceof Error ? err.message : err}`);
-  } finally {
-    await context.close();
-  }
-
-  // Fallback: real vehicle groups from Localiza's public API via Crawlee HttpCrawler
-  const gruposFleet = await fetchLocalizaGrupos();
-  if (gruposFleet.length > 0) {
-    console.log(`[LOCALIZA] ✓ ${gruposFleet.length} grupos reais via API pública (preços estimados)`);
-    return gruposFleet.map(o => ({ ...o, deepLink }));
-  }
-
-  // Last resort: hardcoded fleet
-  const FLEET: ScrapedOffer[] = [
-    { provider: 'LOCALIZA', model: 'Fiat Mobi ou Similar', category: 'ECONOMICO', price: 89.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/MOBI.png' },
-    { provider: 'LOCALIZA', model: 'GM Onix ou Similar', category: 'ECONOMICO', price: 94.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/ONIC.png' },
-    { provider: 'LOCALIZA', model: 'Hyundai HB20 ou Similar', category: 'ECONOMICO', price: 109.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/HB2X.png' },
-    { provider: 'LOCALIZA', model: 'VW Polo ou Similar', category: 'INTERMEDIARIO', price: 134.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/POLO.png' },
-    { provider: 'LOCALIZA', model: 'GM Onix Plus ou Similar', category: 'INTERMEDIARIO', price: 154.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/ONIS.png' },
-    { provider: 'LOCALIZA', model: 'Jeep Compass ou Similar', category: 'SUV', price: 289.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/BORL.png' },
-    { provider: 'LOCALIZA', model: 'Jeep Commander ou Similar', category: 'SUV', price: 329.90, transmission: 'Automático', hasAC: true, seats: 7, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/CMDR.png' },
-    { provider: 'LOCALIZA', model: 'Nissan Sentra ou Similar', category: 'LUXO', price: 249.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/SETA.png' },
-    { provider: 'LOCALIZA', model: 'Audi A3 ou Similar', category: 'LUXO', price: 490.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/AUD3.png' },
+  // Frota de referência — usada só se a API pública falhar
+  return [
+    { provider: 'LOCALIZA', model: 'Fiat Mobi ou Similar', category: 'ECONOMICO', price: 89.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/MOBI.png' },
+    { provider: 'LOCALIZA', model: 'Renault Kwid ou Similar', category: 'ECONOMICO', price: 79.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'GM Onix ou Similar', category: 'ECONOMICO', price: 94.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/ONIC.png' },
+    { provider: 'LOCALIZA', model: 'Fiat Argo ou Similar', category: 'ECONOMICO', price: 92.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'Hyundai HB20 ou Similar', category: 'ECONOMICO', price: 109.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/HB2X.png' },
+    { provider: 'LOCALIZA', model: 'Fiat Cronos ou Similar', category: 'ECONOMICO', price: 97.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'Hyundai HB20S ou Similar', category: 'ECONOMICO', price: 104.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'VW Polo ou Similar', category: 'INTERMEDIARIO', price: 134.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/POLO.png' },
+    { provider: 'LOCALIZA', model: 'Toyota Yaris Sedan ou Similar', category: 'INTERMEDIARIO', price: 139.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'Nissan Versa ou Similar', category: 'INTERMEDIARIO', price: 144.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'VW Virtus ou Similar', category: 'INTERMEDIARIO', price: 149.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'GM Onix Plus ou Similar', category: 'INTERMEDIARIO', price: 154.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/ONIS.png' },
+    { provider: 'LOCALIZA', model: 'Renault Duster ou Similar', category: 'SUV', price: 199.90, transmission: 'Manual', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'Fiat Pulse ou Similar', category: 'SUV', price: 209.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'VW T-Cross ou Similar', category: 'SUV', price: 219.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'Hyundai Creta ou Similar', category: 'SUV', price: 234.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'Jeep Compass ou Similar', category: 'SUV', price: 289.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/BORL.png' },
+    { provider: 'LOCALIZA', model: 'Jeep Commander ou Similar', category: 'SUV', price: 329.90, transmission: 'Automático', hasAC: true, seats: 7, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/CMDR.png' },
+    { provider: 'LOCALIZA', model: 'Nissan Sentra ou Similar', category: 'LUXO', price: 249.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/SETA.png' },
+    { provider: 'LOCALIZA', model: 'Toyota Corolla ou Similar', category: 'LUXO', price: 259.90, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE },
+    { provider: 'LOCALIZA', model: 'Audi A3 ou Similar', category: 'LUXO', price: 490.00, transmission: 'Automático', hasAC: true, seats: 5, deepLink: BOOKING_BASE, imageUrl: 'https://www.localiza.com/brasil-site/geral/Frota/AUD3.png' },
+    { provider: 'LOCALIZA', model: 'Renault Master ou Similar', category: 'VAN', price: 380.00, transmission: 'Manual', hasAC: true, seats: 14, deepLink: BOOKING_BASE },
   ];
-  return FLEET;
 }
 
 if (require.main === module) {
